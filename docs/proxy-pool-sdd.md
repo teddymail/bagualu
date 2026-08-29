@@ -13,11 +13,11 @@
 技术实现在此基础上执行；数据库 ORM 与其余第三方库在满足本节约束的前提下，由实现阶段选择。
 
 - 后端主服务使用 Go 编写，编译为静态二进制（`CGO_ENABLED=0`），按 OpenWrt 目标架构交叉编译，以 ipk 形式安装运行（见第 5 节）。
-- Mihomo 仅作为 Bagualu 的运行时内核依赖包提供代理协议能力；Bagualu 主程序负责全部业务能力，并管理 Mihomo 子进程，通过 Mihomo HTTP 控制 API 和本地代理端口使用内核能力（见 4.3、4.4）。Bagualu 安装包必须声明与目标架构匹配的 Mihomo 依赖，第一版不复用、不接管系统或其他插件提供的 Mihomo 二进制，也不直接调用 Mihomo `core` 包或其他底层 Go 包。
+- Mihomo 仅作为 Bagualu 的运行时内核依赖提供代理协议能力；Bagualu 主程序负责全部业务能力，并管理 Mihomo 子进程，通过 Mihomo HTTP 控制 API 和本地代理端口使用内核能力（见 4.3、4.4）。Bagualu 安装包不得因设备尚未安装 Mihomo 而无法安装；管理后台必须提供匹配目标架构的官方 Mihomo 发行版下载、校验、原子安装和重启能力。第一版不复用、不接管其他插件的 Mihomo 二进制，也不直接调用 Mihomo `core` 包或其他底层 Go 包。
 - 数据存储默认使用 SQLite，采用纯 Go 驱动（`modernc.org/sqlite`），不依赖 cgo，单文件持久化于数据目录；测试结果写入需控制频率与总量，避免闪存和内存压力。
 - 独立管理后台使用 React + TypeScript + Vite + Ant Design 构建为静态单页应用，由 Go 服务通过 `embed.FS` 托管；OpenWrt 设备运行时不依赖 Node.js，静态资源本地化，不依赖公网 CDN。
 - LuCI 设置页保持 OpenWrt 原生轻量实现，不引入前端框架；复杂功能由独立管理后台承担。
-- 包管理采用官方 OpenWrt SDK 构建 ipk：按目标架构出包，Bagualu 主程序、Mihomo 运行时依赖包与 LuCI 文件可以分别打包，但 Bagualu 包必须依赖匹配版本的 Mihomo 包，且只有 Bagualu 主程序注册并运行 OpenWrt 服务；配置与数据分离，升级保留用户配置。
+- 包管理采用官方 OpenWrt SDK 构建 ipk：按目标架构出包，Bagualu 主程序、Mihomo 运行时依赖包与 LuCI 文件可以分别打包；Bagualu 包可在没有 Mihomo 的设备上先安装，内核缺失时由管理后台按 LuCI/UCI 配置执行受控安装，且只有 Bagualu 主程序注册并运行 OpenWrt 服务；配置与数据分离，升级保留用户配置。
 
 ## 2. 项目目标
 
@@ -892,6 +892,9 @@ API 前缀统一为 `/api/v1`。管理 API 供 Web 页面使用，资源 API 供
 | GET | `/dashboard/summary` | 获取首页统计数据。 |
 | GET | `/system/status` | 获取 OpenWrt 服务状态、版本和资源使用情况。 |
 | GET | `/system/core/status` | 获取 Bagualu 管理的 Mihomo 内核依赖进程状态、版本、逻辑连接和当前资源占用。 |
+| GET | `/system/core/install/status` | 获取目标架构、内核安装路径、安装来源和当前安装状态。 |
+| POST | `/system/core/install` | 从 LuCI/UCI 配置的官方发行仓库下载匹配架构的 Mihomo，校验后原子安装并重新拉起受管进程。 |
+| POST | `/system/core/install/upload` | 接收管理员上传的 Mihomo Linux 文件，校验 ELF 后原子安装并重新拉起受管进程。 |
 | POST | `/system/core/diagnose` | 由 Bagualu 执行 Mihomo 可执行文件、配置、控制 API、端口和测试链路自检。 |
 | GET | `/system/core/capabilities` | 获取当前 Mihomo 版本的协议解析、加载和测速能力矩阵。 |
 | POST | `/system/coexistence/check` | 检查 OpenClash 等服务、端口、目录、内存和网络配置冲突。 |

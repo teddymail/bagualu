@@ -21,7 +21,16 @@ function status()
   conn:close()
   local service = result and result.bagualu or {}
   local instances = service.instances or {}
-  local instance = instances.instance or instances.bagualu or {}
+  local instance = instances.instance or instances.bagualu
+  if not instance then
+    for _, candidate in pairs(instances) do
+      if type(candidate) == "table" and (candidate.running ~= nil or candidate.pid ~= nil) then
+        instance = candidate
+        break
+      end
+    end
+  end
+  instance = instance or {}
   local running = instance.running == true
   local runtime = read_runtime_status()
   result = result or {}
@@ -73,19 +82,13 @@ function action(name)
     luci.http.status(400, "invalid action")
     return
   end
-  local conn = require("ubus").connect()
-  if not conn then
-    luci.http.status(503, "ubus unavailable")
-    return
-  end
   if name == "enable" or name == "disable" then
     local uci = require("uci").cursor()
     uci:set("bagualu", "main", "enabled", name == "enable" and "1" or "0")
     uci:commit("bagualu")
   end
-  local ok = conn:call("service", "set", {name = "bagualu", action = name})
-  conn:close()
-  if not ok then
+  local exit_code = require("luci.sys").call("/etc/init.d/bagualu " .. name .. " >/dev/null 2>&1")
+  if exit_code ~= 0 then
     luci.http.status(500, "service operation failed")
     return
   end

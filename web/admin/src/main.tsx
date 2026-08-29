@@ -2,16 +2,16 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Alert, Avatar, Badge, Button, Card, Col, ConfigProvider, Descriptions as AntDescriptions, Drawer, Empty, Form, Input, Layout, Menu, Modal, Progress, Row, Select,
-  Space, Statistic, Switch, Table, Tag, Typography, message, theme as antdTheme,
+  Space, Statistic, Switch, Table, Tag, Typography, Upload, message, theme as antdTheme,
 } from "antd";
 import type { MenuProps, TableProps } from "antd";
 import {
   ApiOutlined, AreaChartOutlined, DashboardOutlined, FileTextOutlined, KeyOutlined, LinkOutlined,
-  NodeIndexOutlined, PlayCircleOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined,
+  NodeIndexOutlined, PlayCircleOutlined, SettingOutlined, TeamOutlined, ThunderboltOutlined, UploadOutlined,
 } from "@ant-design/icons";
 import "antd/dist/reset.css";
 import "./style.css";
-import { api, CoreStatus, Summary } from "./api";
+import { api, CoreInstallStatus, CoreStatus, Summary } from "./api";
 
 const { Header, Sider, Content } = Layout;
 type Page = "dashboard" | "runtime" | "upstreams" | "nodes" | "groups" | "tests" | "reports" | "logs" | "keys" | "subscriptions" | "settings";
@@ -602,11 +602,39 @@ function Logs() {
 }
 
 function Settings() {
-  const result = useApi<{ service?: string; core?: Record<string, unknown>; go?: string; os?: string }>("/system/status", {});
+  const result = useApi<{ service?: string; core?: Record<string, unknown>; core_install?: CoreInstallStatus; go?: string; os?: string }>("/system/status", {});
   const core = result.data.core || {};
+  const install = result.data.core_install || {};
+  const [installing, setInstalling] = useState(false);
+  const installCore = async () => {
+    setInstalling(true);
+    try {
+      const response = await api.post<{ result?: { version?: string; asset?: string; verified?: boolean } }>("/system/core/install");
+      message.success(`Mihomo ${response.result?.version || "已安装"} 已安装并重新启动`);
+      result.reload();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Mihomo 安装失败");
+    } finally {
+      setInstalling(false);
+    }
+  };
+  const uploadCore = async (file: File) => {
+    setInstalling(true);
+    try {
+      const response = await api.upload<{ result?: { version?: string } }>("/system/core/install/upload", file);
+      message.success(`Mihomo ${response.result?.version || "文件"} 已安装并重新启动`);
+      result.reload();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "Mihomo 文件安装失败");
+    } finally {
+      setInstalling(false);
+    }
+  };
   return <PageShell title="系统设置" action={<Space><Button onClick={result.reload}>刷新状态</Button><Button type="primary" href="/cgi-bin/luci/admin/services/bagualu/config" target="_blank">在 LuCI 中配置</Button></Space>}>
     <Alert type="info" showIcon message="系统参数由 OpenWrt LuCI 统一管理" description="管理后台只展示运行状态。启用、端口、数据目录、Mihomo、WAN 带宽和每日测速策略请在 LuCI 中修改，避免出现两套配置。" />
-    <Row gutter={16} className="settings-grid"><Col xs={24} lg={12}><Card title="八卦炉服务"><AntDescriptions column={1} items={[{ key: "service", label: "实际状态", children: <StateTag value={String(result.data.service || "未知")} /> }, { key: "platform", label: "运行平台", children: `${String(result.data.os || "—")} · ${String(result.data.go || "—")}` }, { key: "management", label: "管理入口", children: window.location.origin }]} /></Card></Col><Col xs={24} lg={12}><Card title="受管 Mihomo"><AntDescriptions column={1} items={[{ key: "state", label: "内核状态", children: <StateTag value={String(core.state || (core.available ? "running" : "stopped"))} /> }, { key: "pid", label: "PID", children: String(core.pid || "—") }, { key: "version", label: "版本", children: String(core.version || "—") }, { key: "control", label: "控制端口", children: String(core.control || "—") }, { key: "proxy", label: "代理端口", children: String(core.proxy || "—") }, { key: "restart", label: "自动拉起次数", children: String(core.auto_restarts || 0) }, { key: "error", label: "最近错误码", children: String(core.error_code || "—") }]} /></Card></Col></Row>
+    {!install.installed && <Alert type="warning" showIcon message="Mihomo 内核未安装，测试功能暂不可用" description={<Space direction="vertical"><Typography.Text>八卦炉会从 LuCI 中配置的发行版仓库下载匹配当前 OpenWrt 架构的官方内核，校验后安装到配置的路径并自动重启。若设备访问 GitHub 受限，可在电脑下载官方 Linux 文件后上传。</Typography.Text><Space wrap><Button type="primary" loading={installing} onClick={installCore}>下载并安装 Mihomo</Button><Upload accept=".gz,application/octet-stream" maxCount={1} showUploadList={false} beforeUpload={(file) => { void uploadCore(file); return false; }}><Button icon={<UploadOutlined />} loading={installing}>上传 Mihomo 文件</Button></Upload></Space></Space>} className="settings-grid" />}
+    {install.installed && <Alert type="success" showIcon message={`Mihomo 已安装 · ${install.version || "版本由运行时返回"}`} description={`路径：${install.path || "—"} · 架构：${install.architecture || "—"}`} className="settings-grid" action={<Button loading={installing} onClick={installCore}>检查更新并重装</Button>} />}
+    <Row gutter={16} className="settings-grid"><Col xs={24} lg={12}><Card title="八卦炉服务"><AntDescriptions column={1} items={[{ key: "service", label: "实际状态", children: <StateTag value={String(result.data.service || "未知")} /> }, { key: "platform", label: "运行平台", children: `${String(result.data.os || "—")} · ${String(result.data.go || "—")}` }, { key: "management", label: "管理入口", children: window.location.origin }]} /></Card></Col><Col xs={24} lg={12}><Card title="受管 Mihomo"><AntDescriptions column={1} items={[{ key: "state", label: "内核状态", children: <StateTag value={String(core.state || (core.available ? "running" : "stopped"))} /> }, { key: "pid", label: "PID", children: String(core.pid || "—") }, { key: "version", label: "版本", children: String(core.version || install.version || "—") }, { key: "control", label: "控制端口", children: String(core.control || "—") }, { key: "proxy", label: "代理端口", children: String(core.proxy || "—") }, { key: "restart", label: "自动拉起次数", children: String(core.auto_restarts || 0) }, { key: "error", label: "最近错误码", children: String(core.error_code || install.error || "—") }, { key: "source", label: "安装来源", children: String(install.source || "—") }]} /></Card></Col></Row>
   </PageShell>;
 }
 

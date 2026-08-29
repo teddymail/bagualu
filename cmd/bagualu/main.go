@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +38,8 @@ func main() {
 	binary := flag.String("mihomo-binary", "", "Bagualu-managed Mihomo executable (auto-detected when empty)")
 	proxyPort := flag.Int("mihomo-proxy-port", 7890, "Bagualu-managed local mixed proxy port")
 	selector := flag.String("mihomo-selector", "Bagualu-Test", "private Mihomo selector group")
+	mihomoRepository := flag.String("mihomo-repository", "MetaCubeX/mihomo", "official Mihomo release repository")
+	mihomoVersion := flag.String("mihomo-version", "latest", "Mihomo release tag or latest")
 	wanDownload := flag.Float64("wan-download-bps", 0, "configured WAN download capacity in bytes per second")
 	wanUpload := flag.Float64("wan-upload-bps", 0, "configured WAN upload capacity in bytes per second")
 	loadThreshold := flag.Float64("load-threshold", 0.1, "background load protection ratio")
@@ -82,6 +87,12 @@ func main() {
 		}
 		if value := values["mihomo_selector"]; value != "" {
 			*selector = value
+		}
+		if value := values["mihomo_repository"]; value != "" {
+			*mihomoRepository = value
+		}
+		if value := values["mihomo_version"]; value != "" {
+			*mihomoVersion = value
 		}
 		if value := values["wan_download_bps"]; value != "" {
 			*wanDownload, _ = strconv.ParseFloat(value, 64)
@@ -144,23 +155,35 @@ func main() {
 	}
 	mihomoConfigPath := filepath.Join(configDir, "bagualu.yaml")
 	process := mihomo.NewProcessManager(*binary, mihomoConfigPath)
+	installer := mihomo.NewInstaller(*binary, *mihomoRepository, *mihomoVersion)
 	startupError := ""
+	var startupErrorMu sync.RWMutex
+	setStartupError := func(value string) {
+		startupErrorMu.Lock()
+		startupError = value
+		startupErrorMu.Unlock()
+	}
+	getStartupError := func() string {
+		startupErrorMu.RLock()
+		defer startupErrorMu.RUnlock()
+		return startupError
+	}
 	activeConfigDigest := ""
 	initialNodes, _ := store.NodeRepo().FindAll(context.Background(), domain.NodeFilter{Status: domain.NodeActive})
 	if config, digest, configErr := mihomo.Config(initialNodes, controlAddress, *token, *proxyPort); configErr == nil {
 		activeConfigDigest = digest
 		if err := os.MkdirAll(filepath.Dir(*dbPath), 0700); err != nil {
-			startupError = fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err)
+			setStartupError(fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err))
 		} else if err := os.WriteFile(mihomoConfigPath, config, 0600); err != nil {
-			startupError = fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err)
+			setStartupError(fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err))
 		} else if err := process.Start(context.Background(), "-ext-ctl", controlAddress, "-secret", *token); err != nil {
-			startupError = err.Error()
+			setStartupError(err.Error())
 			log.Printf("mihomo unavailable: %v", err)
 		} else {
 			process.Monitor(runCtx, 3, 2*time.Second, "-ext-ctl", controlAddress, "-secret", *token)
 		}
 	} else {
-		startupError = fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, configErr)
+		setStartupError(fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, configErr))
 	}
 	defer func() {
 		_ = process.Stop()
@@ -175,7 +198,7 @@ func main() {
 		result.PID = process.PID()
 		result.Proxy = "127.0.0.1:" + fmt.Sprint(*proxyPort)
 		result.AutoRestarts = process.RestartCount()
-		if startupError != "" {
+		if getStartupError() != "" {
 			result.Available = false
 			result.State = "failed"
 			result.ErrorCode = domain.ErrCodeCoreUnavailable
@@ -191,6 +214,62 @@ func main() {
 			result.State = "stopped"
 		}
 		return
+	}
+	coreInstallStatus := func(ctx context.Context) domain.CoreInstallStatus {
+		result := installer.Status(ctx)
+		if err := getStartupError(); err != "" && result.Error == "" {
+			result.Error = err
+		}
+		return result
+	}
+	startCore := func() error {
+		if err := process.Start(context.Background(), "-ext-ctl", controlAddress, "-secret", *token); err != nil {
+			setStartupError(err.Error())
+			return err
+		}
+		setStartupError("")
+		process.Monitor(runCtx, 3, 2*time.Second, "-ext-ctl", controlAddress, "-secret", *token)
+		return nil
+	}
+	coreInstall := func(ctx context.Context) (domain.CoreInstallResult, error) {
+		if err := process.Stop(); err != nil {
+			return domain.CoreInstallResult{}, fmt.Errorf("stop Mihomo before install: %w", err)
+		}
+		result, err := installer.InstallLatest(ctx)
+		if err != nil {
+			setStartupError(fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err))
+			_ = startCore()
+			return domain.CoreInstallResult{}, err
+		}
+		if err := startCore(); err != nil {
+			return result, err
+		}
+		return result, nil
+	}
+	coreInstallUpload := func(ctx context.Context, source io.Reader, name string) (domain.CoreInstallResult, error) {
+		archive, err := io.ReadAll(io.LimitReader(source, 128<<20+1))
+		if err != nil {
+			return domain.CoreInstallResult{}, err
+		}
+		if len(archive) == 0 || len(archive) > 128<<20 {
+			return domain.CoreInstallResult{}, fmt.Errorf("uploaded Mihomo file is empty or too large")
+		}
+		if err := mihomo.ValidateArchive(archive); err != nil {
+			return domain.CoreInstallResult{}, err
+		}
+		if err := process.Stop(); err != nil {
+			return domain.CoreInstallResult{}, fmt.Errorf("stop Mihomo before install: %w", err)
+		}
+		result, err := installer.InstallFile(ctx, bytes.NewReader(archive), name)
+		if err != nil {
+			setStartupError(fmt.Sprintf("%s: %v", domain.ErrCodeCoreUnavailable, err))
+			_ = startCore()
+			return domain.CoreInstallResult{}, err
+		}
+		if err := startCore(); err != nil {
+			return result, err
+		}
+		return result, nil
 	}
 	managementListener, err := net.Listen("tcp", *listen)
 	if err != nil {
@@ -365,7 +444,7 @@ func main() {
 	}
 	var testSubmitWithSource func(context.Context, string, domain.TestKind, string) (string, error)
 	testSubmitWithSource = func(ctx context.Context, nodeID string, kind domain.TestKind, speedSource string) (string, error) {
-		if startupError != "" {
+		if getStartupError() != "" {
 			return "", fmt.Errorf("%s", domain.ErrCodeCoreUnavailable)
 		}
 		if current := status(); !current.Available {
@@ -517,7 +596,10 @@ func main() {
 	}()
 
 	srv := httptransport.NewServerWithConfig(httptransport.Config{
-		CoreStatus: status,
+		CoreStatus:        status,
+		CoreInstallStatus: coreInstallStatus,
+		CoreInstall:       coreInstall,
+		CoreInstallUpload: coreInstallUpload,
 		CoreRuntime: func(ctx context.Context) map[string]any {
 			snapshot, err := core.GetConnections(ctx)
 			if err != nil {
@@ -586,6 +668,9 @@ func main() {
 	go func() { serverErrors <- server.Serve(managementListener) }()
 	select {
 	case <-runCtx.Done():
+		if err := process.Stop(); err != nil {
+			log.Printf("stop Mihomo during shutdown: %v", err)
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("shutdown management server: %v", err)
@@ -609,6 +694,9 @@ func main() {
 			log.Printf("management server stopped: %v", err)
 		}
 		stopRun()
+		if err := process.Stop(); err != nil {
+			log.Printf("stop Mihomo after server shutdown: %v", err)
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if !queue.WaitUntilIdle(shutdownCtx) {
 			log.Printf("test queue shutdown timeout")

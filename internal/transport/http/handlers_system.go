@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -55,17 +56,66 @@ func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 			serviceState = "degraded"
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"service": serviceState,
 		"core":    s.safeCoreStatus(),
 		"go":      runtime.Version(),
 		"os":      runtime.GOOS + "/" + runtime.GOARCH,
-	})
+	}
+	if s.coreInstallStatusFn != nil {
+		response["core_install"] = s.coreInstallStatusFn(r.Context())
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 // GET /api/v1/system/core/status
 func (s *Server) coreStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, coreStatusPayload(s.safeCoreStatus()))
+}
+
+func (s *Server) coreInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if s.coreInstallStatusFn == nil {
+		writeJSON(w, http.StatusOK, domain.CoreInstallStatus{Architecture: runtime.GOOS + "/" + runtime.GOARCH})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.coreInstallStatusFn(r.Context()))
+}
+
+func (s *Server) coreInstall(w http.ResponseWriter, r *http.Request) {
+	if s.coreInstallFn == nil {
+		apiErr(w, http.StatusNotImplemented, "core_installer_unavailable", "mihomo installer is not configured")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
+	defer cancel()
+	result, err := s.coreInstallFn(ctx)
+	if err != nil {
+		apiErr(w, http.StatusBadGateway, "core_install_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "installed", "result": result, "core": s.safeCoreStatus()})
+}
+
+func (s *Server) coreInstallUpload(w http.ResponseWriter, r *http.Request) {
+	if s.coreInstallUploadFn == nil {
+		apiErr(w, http.StatusNotImplemented, "core_installer_unavailable", "mihomo upload installer is not configured")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 256<<20)
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		apiErr(w, http.StatusBadRequest, "bad_request", "mihomo file is required")
+		return
+	}
+	defer file.Close()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+	result, err := s.coreInstallUploadFn(ctx, file, filepath.Base(header.Filename))
+	if err != nil {
+		apiErr(w, http.StatusBadRequest, "core_install_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "installed", "result": result, "core": s.safeCoreStatus()})
 }
 
 func coreStatusPayload(value any) any {

@@ -36,6 +36,14 @@ o.default = "7890"
 o = s:option(Value, "mihomo_binary", translate("Mihomo binary"))
 o.default = "/usr/bin/mihomo"
 
+o = s:option(Value, "mihomo_repository", translate("Mihomo release repository"))
+o.default = "MetaCubeX/mihomo"
+o.description = translate("The managed core installer downloads the selected release from this GitHub repository.")
+
+o = s:option(Value, "mihomo_version", translate("Mihomo release version"))
+o.default = "latest"
+o.description = translate("Use latest or a release tag such as v1.19.12.")
+
 o = s:option(Value, "mihomo_token", translate("Mihomo control token"))
 o.password = true
 
@@ -44,7 +52,7 @@ o.default = "八卦炉-Test"
 
 o = s:option(Value, "admin_password", translate("Initial admin password"))
 o.password = true
-o.description = translate("Used only when the admin password has not been initialized in the data directory.")
+o.description = translate("Used only for the first Bagualu backend initialization. Change the LuCI login password in System > Administration.")
 
 o = s:option(Value, "test_queue_limit", translate("Test queue limit"))
 o.datatype = "uinteger"
@@ -86,11 +94,7 @@ o.datatype = "ufloat"
 o.default = "0.1"
 
 function m.on_after_commit(self)
-  local conn = require("ubus").connect()
-  if conn then
-    conn:call("service", "set", {name = "bagualu", action = "reload"})
-    conn:close()
-  end
+  require("luci.sys").call("/etc/init.d/bagualu reload >/dev/null 2>&1")
 end
 
 return m

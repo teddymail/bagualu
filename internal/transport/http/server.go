@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -21,9 +22,12 @@ var adminAssets embed.FS
 // Config holds all dependencies for the full-featured server.
 type Config struct {
 	// CoreStatus returns the current Mihomo core status.
-	CoreStatus  func() domain.CoreStatus
-	CoreTraffic func() map[string]any
-	CoreRuntime func(context.Context) map[string]any
+	CoreStatus        func() domain.CoreStatus
+	CoreInstallStatus func(context.Context) domain.CoreInstallStatus
+	CoreInstall       func(context.Context) (domain.CoreInstallResult, error)
+	CoreInstallUpload func(context.Context, io.Reader, string) (domain.CoreInstallResult, error)
+	CoreTraffic       func() map[string]any
+	CoreRuntime       func(context.Context) map[string]any
 	// Store provides all repository factories. May be nil for minimal/legacy use.
 	Store *persistence.Store
 	// AdminPassword is the plain-text password used to bootstrap the admin
@@ -46,19 +50,22 @@ type Config struct {
 // All dependencies are optional: when Store is nil, repository-backed handlers
 // respond with 501 Not Implemented so that legacy single-function usage keeps working.
 type Server struct {
-	CoreStatus       func() domain.CoreStatus
-	coreTraffic      func() map[string]any
-	coreRuntime      func(context.Context) map[string]any
-	store            *persistence.Store
-	sessions         *sessionStore
-	testSubmit       func(context.Context, string, domain.TestKind) (string, error)
-	refreshSubmit    func(context.Context, string) (string, error)
-	testCancel       func(context.Context, string) (bool, error)
-	scoreRecalculate func(context.Context, string) (string, error)
-	runtimeSnapshot  func() map[string]any
-	coreReload       func(context.Context) error
-	scorePolicyGet   func() domain.ScorePolicy
-	scorePolicySet   func(domain.ScorePolicy) error
+	CoreStatus          func() domain.CoreStatus
+	coreInstallStatusFn func(context.Context) domain.CoreInstallStatus
+	coreInstallFn       func(context.Context) (domain.CoreInstallResult, error)
+	coreInstallUploadFn func(context.Context, io.Reader, string) (domain.CoreInstallResult, error)
+	coreTraffic         func() map[string]any
+	coreRuntime         func(context.Context) map[string]any
+	store               *persistence.Store
+	sessions            *sessionStore
+	testSubmit          func(context.Context, string, domain.TestKind) (string, error)
+	refreshSubmit       func(context.Context, string) (string, error)
+	testCancel          func(context.Context, string) (bool, error)
+	scoreRecalculate    func(context.Context, string) (string, error)
+	runtimeSnapshot     func() map[string]any
+	coreReload          func(context.Context) error
+	scorePolicyGet      func() domain.ScorePolicy
+	scorePolicySet      func(domain.ScorePolicy) error
 }
 
 // NewServer constructs a minimal server from only a CoreStatus function.
@@ -72,19 +79,22 @@ func NewServer(status func() domain.CoreStatus) *Server {
 // Call Bootstrap after construction to initialise the default admin password.
 func NewServerWithConfig(cfg Config) *Server {
 	s := &Server{
-		CoreStatus:       cfg.CoreStatus,
-		coreTraffic:      cfg.CoreTraffic,
-		coreRuntime:      cfg.CoreRuntime,
-		store:            cfg.Store,
-		sessions:         newSessionStore(),
-		testSubmit:       cfg.TestSubmit,
-		refreshSubmit:    cfg.RefreshSubmit,
-		testCancel:       cfg.TestCancel,
-		scoreRecalculate: cfg.ScoreRecalculate,
-		runtimeSnapshot:  cfg.RuntimeSnapshot,
-		coreReload:       cfg.CoreReload,
-		scorePolicyGet:   cfg.ScorePolicyGet,
-		scorePolicySet:   cfg.ScorePolicySet,
+		CoreStatus:          cfg.CoreStatus,
+		coreInstallStatusFn: cfg.CoreInstallStatus,
+		coreInstallFn:       cfg.CoreInstall,
+		coreInstallUploadFn: cfg.CoreInstallUpload,
+		coreTraffic:         cfg.CoreTraffic,
+		coreRuntime:         cfg.CoreRuntime,
+		store:               cfg.Store,
+		sessions:            newSessionStore(),
+		testSubmit:          cfg.TestSubmit,
+		refreshSubmit:       cfg.RefreshSubmit,
+		testCancel:          cfg.TestCancel,
+		scoreRecalculate:    cfg.ScoreRecalculate,
+		runtimeSnapshot:     cfg.RuntimeSnapshot,
+		coreReload:          cfg.CoreReload,
+		scorePolicyGet:      cfg.ScorePolicyGet,
+		scorePolicySet:      cfg.ScorePolicySet,
 	}
 	if cfg.Store != nil && cfg.AdminPassword != "" {
 		ctx := noopCtx{}
@@ -115,6 +125,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/v1/system/status", s.adminRequired(s.systemStatus))
 	mux.HandleFunc("GET /api/v1/system/core/status", s.adminRequired(s.coreStatus))
+	mux.HandleFunc("GET /api/v1/system/core/install/status", s.adminRequired(s.coreInstallStatus))
+	mux.HandleFunc("POST /api/v1/system/core/install", s.adminRequired(s.coreInstall))
+	mux.HandleFunc("POST /api/v1/system/core/install/upload", s.adminRequired(s.coreInstallUpload))
 	mux.HandleFunc("POST /api/v1/system/core/diagnose", s.adminRequired(s.coreDiagnose))
 	mux.HandleFunc("GET /api/v1/system/core/capabilities", s.adminRequired(s.coreCapabilities))
 	mux.HandleFunc("POST /api/v1/system/coexistence/check", s.adminRequired(s.coexistenceCheck))

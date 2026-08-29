@@ -84,3 +84,20 @@ type CoreStatus struct {
 	State        string `json:"state,omitempty"`
 	AutoRestarts int    `json:"auto_restarts"`
 }
+
+type CoreInstallStatus struct {
+	Installed    bool   `json:"installed"`
+	Path         string `json:"path"`
+	Version      string `json:"version,omitempty"`
+	Architecture string `json:"architecture"`
+	Source       string `json:"source,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type CoreInstallResult struct {
+	Version  string `json:"version"`
+	Asset    string `json:"asset"`
+	Path     string `json:"path"`
+	Verified bool   `json:"verified"`
+	SHA256   string `json:"sha256,omitempty"`
+}

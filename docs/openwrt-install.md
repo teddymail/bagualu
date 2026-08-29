@@ -1,6 +1,6 @@
 # 八卦炉 OpenWrt 安装
 
-工作流会为每个目标架构生成一个 ipk artifact。先下载与路由器架构匹配的 `bagualu_*.ipk`，并确认设备已经提供匹配架构的 `mihomo` 包。
+向 `main` 推送或手动运行 workflow 会生成各架构 ipk artifact；推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.0`）还会按 tag 版本打包，并自动创建 GitHub Release，附带 x86_64、ARM64 和 MIPS24Kc 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
 
 ## 安装
 
@@ -14,6 +14,12 @@ uci commit bagualu
 /etc/init.d/bagualu enable
 /etc/init.d/bagualu start
 ```
+
+如果设备没有 `/usr/bin/mihomo`，登录管理后台后进入“系统设置”，点击“下载并安装 Mihomo”。安装器会根据 OpenWrt 当前架构选择发行版资产，校验下载内容后原子替换 `mihomo_binary` 指定路径，并重新启动受管内核。
+
+如果设备访问 GitHub 时出现 TLS 或网络限制，在电脑上下载匹配架构的 Mihomo Linux 文件，点击同页“上传 Mihomo 文件”即可；上传文件会经过 ELF 校验后安装，不需要 SSH 手工复制。
+
+也可以在 LuCI 的八卦炉配置中指定 `mihomo_repository` 和 `mihomo_version`，默认使用 `MetaCubeX/mihomo` 的 `latest` 发行版。
 
 LuCI 页面：
 

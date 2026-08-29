@@ -220,6 +220,34 @@ func TestCoreStatus(t *testing.T) {
 	}
 }
 
+func TestCoreInstallEndpoints(t *testing.T) {
+	store, err := persistence.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	srv := httptransport.NewServerWithConfig(httptransport.Config{
+		CoreStatus: func() domain.CoreStatus { return domain.CoreStatus{Available: false} },
+		CoreInstallStatus: func(context.Context) domain.CoreInstallStatus {
+			return domain.CoreInstallStatus{Installed: false, Path: "/usr/bin/mihomo", Architecture: "linux/amd64"}
+		},
+		CoreInstall: func(context.Context) (domain.CoreInstallResult, error) {
+			return domain.CoreInstallResult{Version: "v1.2.3", Path: "/usr/bin/mihomo", Verified: true}, nil
+		},
+		Store:         store,
+		AdminPassword: "testpass",
+	})
+	token := login(t, srv.Handler(), "testpass")
+	status := doRequest(t, srv.Handler(), "GET", "/api/v1/system/core/install/status", nil, authHeader(token))
+	if status.Code != http.StatusOK {
+		t.Fatalf("status: want 200 got %d", status.Code)
+	}
+	install := doRequest(t, srv.Handler(), "POST", "/api/v1/system/core/install", nil, authHeader(token))
+	if install.Code != http.StatusOK {
+		t.Fatalf("install: want 200 got %d: %s", install.Code, install.Body.String())
+	}
+}
+
 func TestRuntimeSummary(t *testing.T) {
 	srv, _ := newTestServer(t)
 	token := login(t, srv.Handler(), "testpass")

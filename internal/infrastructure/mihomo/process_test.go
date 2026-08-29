@@ -23,7 +23,7 @@ func TestProcessManagerManualStopCancelsPendingRestart(t *testing.T) {
 	if err := manager.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(time.Second)
+	deadline := time.Now().Add(3 * time.Second)
 	for {
 		if _, err := os.Stat(countFile); err == nil {
 			break

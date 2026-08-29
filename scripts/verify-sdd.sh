@@ -16,7 +16,7 @@ sh -n packaging/openwrt/etc/init.d/bagualu
 
 if command -v luac >/dev/null 2>&1; then
   luac -p packaging/openwrt/usr/lib/lua/luci/controller/bagualu.lua
-  luac -p packaging/openwrt/usr/share/luci/model/cbi/bagualu/config.lua
+  luac -p packaging/openwrt/usr/lib/lua/luci/model/cbi/bagualu/config.lua
 fi
 
 cd web/admin
