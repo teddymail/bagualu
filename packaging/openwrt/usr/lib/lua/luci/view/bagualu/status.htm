@@ -1,0 +1,40 @@
+<%+header%>
+<h2><%:八卦炉%></h2>
+<p><%:系统生命周期与参数由 OpenWrt LuCI 统一管理；独立管理后台用于节点、测试和报表。%></p>
+<div class="cbi-map">
+  <div class="cbi-section">
+    <h3><%:运行状态%></h3>
+    <div class="cbi-value"><label class="cbi-value-title"><%:期望状态%></label><div class="cbi-value-field"><span id="expected-state">-</span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:八卦炉状态%></label><div class="cbi-value-field"><span id="service-state"><%:Loading...%></span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:八卦炉 PID%></label><div class="cbi-value-field"><span id="bagualu-pid">-</span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:Mihomo 状态%></label><div class="cbi-value-field"><span id="mihomo-state">-</span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:Mihomo 版本 / PID%></label><div class="cbi-value-field"><span id="mihomo-detail">-</span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:端口%></label><div class="cbi-value-field"><span id="port-detail">-</span></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:最近错误%></label><div class="cbi-value-field"><span id="last-error">-</span><br><small id="bagualu-operation"></small></div></div>
+  </div>
+  <div class="cbi-section">
+    <h3><%:管理操作%></h3>
+    <div class="cbi-value"><label class="cbi-value-title"><%:管理后台%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="/bagualu/" target="_blank" rel="noreferrer"><%:Open management backend%></a></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:系统配置%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="<%=luci.dispatcher.build_url('admin/services/bagualu/config')%>"><%:Configure in LuCI%></a></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:服务控制%></label><div class="cbi-value-field"><button class="btn cbi-button cbi-button-apply" data-action="start"><%:Start%></button> <button class="btn cbi-button cbi-button-reset" data-action="stop"><%:Stop%></button> <button class="btn cbi-button cbi-button-apply" data-action="restart"><%:Restart%></button> <button class="btn cbi-button cbi-button-apply" data-action="enable"><%:Enable%></button> <button class="btn cbi-button cbi-button-reset" data-action="disable"><%:Disable%></button></div></div>
+  </div>
+</div>
+<script>
+(function () {
+  var statusURL = '<%=luci.dispatcher.build_url("admin/services/bagualu/status")%>';
+  var actionURL = '<%=luci.dispatcher.build_url("admin/services/bagualu/action")%>';
+  function text(id, value) { document.getElementById(id).textContent = value === undefined || value === null || value === '' ? '-' : String(value); }
+  function refresh() { fetch(statusURL, {credentials: 'same-origin'}).then(function (response) { return response.json(); }).then(function (data) {
+    var core = data.mihomo || {};
+    text('expected-state', data.expected_state); text('service-state', data.service_state); text('bagualu-pid', data.bagualu_pid || 0);
+    text('mihomo-state', core.state || (core.available ? 'running' : 'stopped')); text('mihomo-detail', (core.version || '-') + ' / PID ' + (data.mihomo_pid || core.pid || 0));
+    text('port-detail', '管理 ' + (data.management || '-') + ' · 控制 ' + (data.control || '-') + ' · 代理 ' + (data.proxy || '-'));
+    text('last-error', data.error_code || data.error || '-'); text('bagualu-operation', data.operation_id ? 'operation_id: ' + data.operation_id + ' · ' + data.operation_action + ' · ' + data.operation_status : '');
+  }).catch(function () { text('service-state', '<%:Status unavailable%>'); }); }
+  document.querySelectorAll('[data-action]').forEach(function (button) { button.addEventListener('click', function () {
+    button.disabled = true; fetch(actionURL + '/' + button.getAttribute('data-action'), {method: 'POST', credentials: 'same-origin'}).then(function (response) { return response.json(); }).then(function (data) { text('bagualu-operation', data.operation_id ? 'operation_id: ' + data.operation_id + ' · submitted' : '<%:Submitted%>'); refresh(); }).catch(function () { text('bagualu-operation', '<%:Operation failed%>'); }).finally(function () { button.disabled = false; });
+  }); });
+  refresh(); window.setInterval(refresh, 1000);
+}());
+</script>
+<%+footer%>

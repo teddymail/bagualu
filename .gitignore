@@ -1,0 +1,5 @@
+web/admin/node_modules/
+web/admin/dist/
+.openwrt/
+.DS_Store
+.idea/

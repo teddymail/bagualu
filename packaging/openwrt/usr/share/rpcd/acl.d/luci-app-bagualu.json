@@ -1,0 +1,7 @@
+{
+  "luci-app-bagualu": {
+    "description": "八卦炉服务管理",
+    "read": { "uci": [ "bagualu" ], "ubus": { "service": [ "list" ] } },
+    "write": { "uci": [ "bagualu" ], "ubus": { "service": [ "event", "set" ] } }
+  }
+}

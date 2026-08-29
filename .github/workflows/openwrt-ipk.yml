@@ -1,0 +1,102 @@
+name: Build OpenWrt IPK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/openwrt-ipk.yml"
+      - "cmd/**"
+      - "internal/**"
+      - "packaging/openwrt/**"
+      - "scripts/sync-admin-static.sh"
+      - "web/admin/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenWrt x86_64
+            sdk_arch: x86-64
+            goarch: amd64
+            artifact: bagualu-openwrt-x86-64
+          - name: OpenWrt ARM64
+            sdk_arch: aarch64_cortex-a53
+            goarch: arm64
+            artifact: bagualu-openwrt-aarch64-cortex-a53
+          - name: OpenWrt MIPS24Kc
+            sdk_arch: mips_24kc
+            goarch: mips
+            gomips: softfloat
+            artifact: bagualu-openwrt-mips-24kc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+
+      - name: Install frontend dependencies
+        run: |
+          npm ci --prefix web/admin
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Verify SDD
+        run: ./scripts/verify-sdd.sh
+
+      - name: Build static Bagualu binary
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          GOMIPS: ${{ matrix.gomips }}
+        run: |
+          mkdir -p .openwrt
+          CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH" GOMIPS="$GOMIPS" \
+            go build -trimpath -ldflags "-s -w" -o .openwrt/bagualu ./cmd/bagualu
+          file .openwrt/bagualu
+
+      - name: Stage OpenWrt package feed
+        run: |
+          mkdir -p package
+          cp -a packaging/openwrt package/bagualu
+
+      - name: Build package with OpenWrt SDK
+        uses: openwrt/gh-action-sdk@v9
+        env:
+          ARCH: ${{ matrix.sdk_arch }}
+          BAGUALU_SOURCE_DIR: ${{ github.workspace }}
+          BAGUALU_BINARY: ${{ github.workspace }}/.openwrt/bagualu
+
+      - name: Collect package metadata
+        run: |
+          mkdir -p artifact
+          find bin/packages -type f \( -name '*.ipk' -o -name 'Packages*' \) -exec cp --parents {} artifact/ \;
+          test -n "$(find artifact -name '*.ipk' -print -quit)"
+          cp docs/openwrt-install.md artifact/
+
+      - name: Upload IPK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: artifact
+          if-no-files-found: error

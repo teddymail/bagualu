@@ -1,0 +1,14 @@
+{
+  "admin/services/bagualu": {
+    "title": "八卦炉",
+    "order": 10,
+    "action": { "type": "template", "path": "bagualu/status" },
+    "depends": { "acl": [ "luci-app-bagualu" ] }
+  },
+  "admin/services/bagualu/config": {
+    "title": "Configuration",
+    "order": 20,
+    "action": { "type": "cbi", "config": "bagualu" },
+    "depends": { "acl": [ "luci-app-bagualu" ] }
+  }
+}
