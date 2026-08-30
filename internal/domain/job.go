@@ -18,15 +18,18 @@ const (
 
 // Job represents a background task: upstream refresh, node test, score recalculation, etc.
 type Job struct {
-	ID         string
-	Kind       string // e.g. "refresh_upstream", "test_node", "recalculate_scores"
-	Status     JobStatus
-	Progress   int    // 0–100
-	EntityID   string // upstream ID, node ID, etc.
-	Error      string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	FinishedAt *time.Time
+	ID           string
+	Kind         string // e.g. "refresh_upstream", "test_node", "recalculate_scores"
+	Status       JobStatus
+	Progress     int    // 0–100
+	EntityID     string // upstream ID, node ID, etc.
+	Error        string
+	ErrorCode    string
+	ErrorDetail  string
+	FailureStage string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	FinishedAt   *time.Time
 }
 
 // IsTerminal reports whether the job has reached a final state.

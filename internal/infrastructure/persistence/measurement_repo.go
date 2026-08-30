@@ -18,6 +18,7 @@ func NewMeasurementRepo(db *sql.DB) *MeasurementRepo { return &MeasurementRepo{d
 func (r *MeasurementRepo) Save(ctx context.Context, m *domain.Measurement) error {
 	evidenceJSON, _ := json.Marshal(m.CoreEvidence)
 	contextJSON, _ := json.Marshal(map[string]any{
+		"error_detail":   m.ErrorDetail,
 		"proxy_protocol": m.ProxyProtocol, "test_url": m.TestURL, "exit_ip": m.ExitIP,
 		"baseline_target": m.BaselineTarget, "speed_source": m.SpeedSource,
 		"load_status": m.LoadStatus, "background_upload_bps": m.BackgroundUploadBPS,
@@ -162,6 +163,7 @@ func (r *MeasurementRepo) FindByID(ctx context.Context, id string) (*domain.Meas
 
 func decodeMeasurementContext(raw string, measurement *domain.Measurement) {
 	var values struct {
+		ErrorDetail                 string  `json:"error_detail"`
 		ProxyProtocol               string  `json:"proxy_protocol"`
 		TestURL                     string  `json:"test_url"`
 		ExitIP                      string  `json:"exit_ip"`
@@ -185,6 +187,7 @@ func decodeMeasurementContext(raw string, measurement *domain.Measurement) {
 		return
 	}
 	measurement.ProxyProtocol = values.ProxyProtocol
+	measurement.ErrorDetail = values.ErrorDetail
 	measurement.TestURL = values.TestURL
 	measurement.ExitIP = values.ExitIP
 	measurement.BaselineTarget = values.BaselineTarget

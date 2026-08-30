@@ -182,6 +182,67 @@ http://192.168.1.1:18787/
 - 流量报表：查看八卦炉管理的吞吐和测速数据。
 - 系统设置：查看只读运行配置和 Mihomo 安装状态。
 
+## Docker 部署
+
+Docker 镜像包含八卦炉和独立的 Mihomo 内核，不需要在宿主机另行安装 Mihomo。容器只对外暴露八卦炉管理端口 `18787`，Mihomo 控制 API 和代理端口仅在容器内部监听，不会占用宿主机已有的 `9090`、`7890` 或其他端口。
+
+### 方式一：Docker Compose
+
+复制 `.env.example` 为 `.env`，再设置唯一的后台密码和 Mihomo 控制密钥：
+
+```sh
+cp .env.example .env
+```
+
+编辑 `.env`：
+
+```dotenv
+BAGUALU_ADMIN_PASSWORD=请替换为至少8位随机密码
+BAGUALU_MIHOMO_TOKEN=请替换为随机控制密钥
+# 可选：固定 Mihomo 版本；默认使用官方 latest
+# MIHOMO_VERSION=vX.Y.Z
+```
+
+启动：
+
+```sh
+docker compose up -d --build
+docker compose ps
+docker compose logs -f bagualu
+```
+
+浏览器打开 `http://服务器地址:18787/`。数据库、节点、订阅、分组和测速历史保存在 Docker volume `bagualu-data` 中；删除容器不会删除该 volume。
+
+停止或升级：
+
+```sh
+docker compose down
+docker compose up -d --build
+```
+
+### 方式二：直接运行
+
+```sh
+docker build --build-arg MIHOMO_VERSION=latest -t bagualu:local .
+docker volume create bagualu-data
+docker run -d --name bagualu \
+  --restart unless-stopped \
+  -p 18787:18787 \
+  -e BAGUALU_ADMIN_PASSWORD='请替换为至少8位随机密码' \
+  -e BAGUALU_MIHOMO_TOKEN='请替换为随机控制密钥' \
+  -v bagualu-data:/var/lib/bagualu \
+  bagualu:local
+```
+
+镜像构建会根据 Docker 目标架构下载官方 Mihomo Linux 发行版，当前支持 `amd64`、`arm64` 和 `386`。如需离线环境部署，先在可联网机器构建镜像，再将镜像导出并复制到目标服务器：
+
+```sh
+docker save bagualu:local | gzip > bagualu-docker.tar.gz
+docker load < bagualu-docker.tar.gz
+```
+
+Docker 部署使用容器自己的网络命名空间。节点下载测速仍然通过容器内八卦炉管理的 Mihomo 代理完成；如果宿主机或上游路由器开启了透明代理，测速基线可能仍受其策略影响，应在网络策略中为 Docker 容器网段保留直连出口。
+
 ## 第一次使用
 
 推荐按照以下顺序配置：

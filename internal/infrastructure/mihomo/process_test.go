@@ -5,9 +5,39 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestProcessManagerCapturesStdoutAndStderr(t *testing.T) {
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "fake-mihomo")
+	script := "#!/bin/sh\necho ready\necho 'dial failed: connection refused' >&2\n"
+	if err := os.WriteFile(binary, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewProcessManager(binary, filepath.Join(directory, "config.yaml"))
+	var mu sync.Mutex
+	lines := map[string]string{}
+	manager.SetLogHandler(func(stream, message string) {
+		mu.Lock()
+		lines[stream] = message
+		mu.Unlock()
+	})
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	done := manager.done
+	manager.mu.Unlock()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if lines["stdout"] != "ready" || lines["stderr"] != "dial failed: connection refused" {
+		t.Fatalf("process output was not captured: %#v", lines)
+	}
+}
 
 func TestProcessManagerManualStopCancelsPendingRestart(t *testing.T) {
 	directory := t.TempDir()

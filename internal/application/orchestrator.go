@@ -230,6 +230,9 @@ func (o *Orchestrator) wrapJob(job TestJob) func(ctx context.Context) error {
 			outcome.Infrastructure = true
 			err = nil
 		} else if err != nil {
+			if outcome.ErrorDetail == "" {
+				outcome.ErrorDetail = err.Error()
+			}
 			outcome.Success = false
 			if outcome.ErrorCode == "" {
 				var coded interface{ ErrorCode() string }
@@ -248,6 +251,9 @@ func (o *Orchestrator) wrapJob(job TestJob) func(ctx context.Context) error {
 			if outcome.ErrorCode == "" {
 				outcome.ErrorCode = domain.ErrCodeCoreRouteUnverified
 			}
+		}
+		if !outcome.Success && outcome.ErrorDetail == "" {
+			outcome.ErrorDetail = outcome.ErrorCode
 		}
 
 		o.deliver(outcome)

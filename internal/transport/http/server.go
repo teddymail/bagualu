@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/teddymail/bagualu/internal/domain"
+	"github.com/teddymail/bagualu/internal/infrastructure/logging"
 	"github.com/teddymail/bagualu/internal/infrastructure/persistence"
 )
 
@@ -28,6 +29,7 @@ type Config struct {
 	CoreInstallUpload func(context.Context, io.Reader, string) (domain.CoreInstallResult, error)
 	CoreTraffic       func() map[string]any
 	CoreRuntime       func(context.Context) map[string]any
+	RuntimeLogs       *logging.Buffer
 	// Store provides all repository factories. May be nil for minimal/legacy use.
 	Store *persistence.Store
 	// AdminPassword is the plain-text password used to bootstrap the admin
@@ -56,6 +58,7 @@ type Server struct {
 	coreInstallUploadFn func(context.Context, io.Reader, string) (domain.CoreInstallResult, error)
 	coreTraffic         func() map[string]any
 	coreRuntime         func(context.Context) map[string]any
+	runtimeLogs         *logging.Buffer
 	store               *persistence.Store
 	sessions            *sessionStore
 	testSubmit          func(context.Context, string, domain.TestKind) (string, error)
@@ -85,6 +88,7 @@ func NewServerWithConfig(cfg Config) *Server {
 		coreInstallUploadFn: cfg.CoreInstallUpload,
 		coreTraffic:         cfg.CoreTraffic,
 		coreRuntime:         cfg.CoreRuntime,
+		runtimeLogs:         cfg.RuntimeLogs,
 		store:               cfg.Store,
 		sessions:            newSessionStore(),
 		testSubmit:          cfg.TestSubmit,
@@ -137,8 +141,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/system/config", s.adminRequired(s.systemConfigPut))
 	mux.HandleFunc("GET /api/v1/system/operations/{id}", s.adminRequired(s.systemOperation))
 	mux.HandleFunc("GET /api/v1/system/logs", s.adminRequired(s.systemLogs))
-	mux.HandleFunc("GET /api/v1/system/logs/stream", s.adminRequired(s.systemLogs))
-	mux.HandleFunc("GET /api/v1/system/core/logs", s.adminRequired(s.systemLogs))
+	mux.HandleFunc("GET /api/v1/system/logs/stream", s.adminRequired(s.systemLogStream))
+	mux.HandleFunc("GET /api/v1/system/core/logs", s.adminRequired(s.coreLogs))
 	mux.HandleFunc("PUT /api/v1/system/admin", s.adminRequired(s.systemAdminPut))
 
 	mux.HandleFunc("GET /api/v1/runtime/summary", s.adminRequired(s.runtimeSummary))

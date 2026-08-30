@@ -1,0 +1,19 @@
+services:
+  bagualu:
+    build:
+      context: .
+      args:
+        MIHOMO_VERSION: ${MIHOMO_VERSION:-latest}
+    image: bagualu:local
+    restart: unless-stopped
+    ports:
+      - "18787:18787"
+    environment:
+      BAGUALU_ADMIN_PASSWORD: ${BAGUALU_ADMIN_PASSWORD:?set BAGUALU_ADMIN_PASSWORD in .env}
+      BAGUALU_MIHOMO_TOKEN: ${BAGUALU_MIHOMO_TOKEN:?set BAGUALU_MIHOMO_TOKEN in .env}
+    volumes:
+      - bagualu-data:/var/lib/bagualu
+    init: true
+
+volumes:
+  bagualu-data:

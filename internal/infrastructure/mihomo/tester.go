@@ -154,7 +154,12 @@ func (t *Tester) do(ctx context.Context, nodeName, target string, maxBytes int64
 		if throughput && response.StatusCode >= 500 {
 			code = domain.ErrCodeSpeedSourceUnavailable
 		}
-		err = fmt.Errorf("proxy request returned HTTP %d", response.StatusCode)
+		snippet, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		detail := strings.Join(strings.Fields(string(snippet)), " ")
+		if detail == "" {
+			detail = http.StatusText(response.StatusCode)
+		}
+		err = fmt.Errorf("proxy request returned HTTP %d: %s", response.StatusCode, detail)
 		return domain.MeasurementOutcome{Status: "failed", ErrorCode: code, FailureStage: "response", TestURL: target}, err
 	}
 	firstByte := time.Since(start)

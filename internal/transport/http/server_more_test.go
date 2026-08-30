@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/teddymail/bagualu/internal/domain"
+	"github.com/teddymail/bagualu/internal/infrastructure/logging"
+	"github.com/teddymail/bagualu/internal/infrastructure/persistence"
+	httptransport "github.com/teddymail/bagualu/internal/transport/http"
 )
 
 func TestJob_NotFound(t *testing.T) {
@@ -18,6 +21,74 @@ func TestJob_NotFound(t *testing.T) {
 	rr := doRequest(t, srv.Handler(), "GET", "/api/v1/jobs/nonexistent", nil, authHeader(token))
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("want 404 got %d", rr.Code)
+	}
+}
+
+func TestSystemLogsExposeDetailedJobFailure(t *testing.T) {
+	srv, store := newTestServer(t)
+	now := time.Now().UTC()
+	errDetail := "Mihomo returned HTTP 503 while loading node jp-08"
+	if err := store.JobRepo().Save(context.Background(), &domain.Job{
+		ID: "job-detailed", Kind: "test_throughput", Status: domain.JobFailed,
+		Progress: 100, EntityID: "node-jp-08", Error: errDetail,
+		ErrorCode: domain.ErrCodeCoreAPIUnavailable, ErrorDetail: errDetail,
+		FailureStage: "core_api", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save job: %v", err)
+	}
+	token := login(t, srv.Handler(), "testpass")
+	rr := doRequest(t, srv.Handler(), "GET", "/api/v1/system/logs?level=error&error_code=core_api_unavailable&q=jp-08", nil, authHeader(token))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("logs: want 200 got %d: %s", rr.Code, rr.Body.String())
+	}
+	var response struct {
+		Logs []map[string]any `json:"logs"`
+	}
+	decodeBody(t, rr, &response)
+	if len(response.Logs) != 1 {
+		t.Fatalf("want one detailed log, got %d: %#v", len(response.Logs), response.Logs)
+	}
+	entry := response.Logs[0]
+	if entry["detail"] != errDetail || entry["failure_stage"] != "core_api" || entry["node_id"] != "node-jp-08" {
+		t.Fatalf("detailed fields missing: %#v", entry)
+	}
+	if !strings.Contains(entry["message"].(string), errDetail) {
+		t.Fatalf("message does not include detail: %#v", entry["message"])
+	}
+}
+
+func TestSystemCoreLogsExposeProcessOutputAndStreamCursor(t *testing.T) {
+	store, err := persistence.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	logs := logging.NewBuffer(10)
+	logs.Add("mihomo", "stderr", "error", "dial tcp 10.0.0.1:443: connection refused")
+	srv := httptransport.NewServerWithConfig(httptransport.Config{Store: store, AdminPassword: "testpass", RuntimeLogs: logs})
+	token := login(t, srv.Handler(), "testpass")
+	rr := doRequest(t, srv.Handler(), "GET", "/api/v1/system/core/logs?level=error", nil, authHeader(token))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("core logs: want 200 got %d: %s", rr.Code, rr.Body.String())
+	}
+	var response struct {
+		Logs      []map[string]any `json:"logs"`
+		NextSince uint64           `json:"next_since"`
+	}
+	decodeBody(t, rr, &response)
+	if len(response.Logs) != 1 || response.Logs[0]["service"] != "mihomo" || response.Logs[0]["detail"] != "dial tcp 10.0.0.1:443: connection refused" {
+		t.Fatalf("core log detail missing: %#v", response)
+	}
+	rr = doRequest(t, srv.Handler(), "GET", "/api/v1/system/logs/stream?since="+fmt.Sprint(response.NextSince), nil, authHeader(token))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("log stream: want 200 got %d: %s", rr.Code, rr.Body.String())
+	}
+	var stream struct {
+		Logs []map[string]any `json:"logs"`
+	}
+	decodeBody(t, rr, &stream)
+	if len(stream.Logs) != 0 {
+		t.Fatalf("cursor should return no old logs: %#v", stream.Logs)
 	}
 }
 

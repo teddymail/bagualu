@@ -396,11 +396,15 @@ func TestJobRepo_CRUD(t *testing.T) {
 	if got.Kind != "refresh_upstream" || got.Status != domain.JobPending {
 		t.Fatalf("unexpected job: %+v", got)
 	}
-	if err := repo.UpdateStatus(ctx, "j1", domain.JobDone, 100, ""); err != nil {
+	if err := repo.UpdateStatusDetail(ctx, "j1", domain.JobFailed, 100,
+		domain.ErrCodeCoreAPIUnavailable, "Mihomo returned HTTP 503 while loading the node", "core_api"); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 	got2, _ := repo.FindByID(ctx, "j1")
-	if got2.Status != domain.JobDone || got2.FinishedAt == nil {
+	if got2.Status != domain.JobFailed || got2.FinishedAt == nil ||
+		got2.ErrorCode != domain.ErrCodeCoreAPIUnavailable ||
+		got2.ErrorDetail != "Mihomo returned HTTP 503 while loading the node" ||
+		got2.FailureStage != "core_api" {
 		t.Fatalf("status not updated: %+v", got2)
 	}
 }

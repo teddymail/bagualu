@@ -1,6 +1,7 @@
 package mihomo
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ type ProcessManager struct {
 	command        *exec.Cmd
 	done           chan struct{}
 	binary, config string
+	logHandler     func(stream, message string)
 	stopRequested  bool
 	restartCount   int
 	failed         bool
@@ -21,6 +23,12 @@ type ProcessManager struct {
 
 func NewProcessManager(binary, config string) *ProcessManager {
 	return &ProcessManager{binary: binary, config: config}
+}
+
+func (m *ProcessManager) SetLogHandler(handler func(stream, message string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.logHandler = handler
 }
 
 func (m *ProcessManager) Start(ctx context.Context, args ...string) error {
@@ -39,7 +47,16 @@ func (m *ProcessManager) Start(ctx context.Context, args ...string) error {
 	}
 	m.command = exec.CommandContext(ctx, m.binary, append([]string{"-f", m.config}, args...)...)
 	configureCommand(m.command)
-	m.command.Stdout, m.command.Stderr = os.Stdout, os.Stderr
+	stdout, err := m.command.StdoutPipe()
+	if err != nil {
+		m.command = nil
+		return fmt.Errorf("core_unavailable: capture stdout: %w", err)
+	}
+	stderr, err := m.command.StderrPipe()
+	if err != nil {
+		m.command = nil
+		return fmt.Errorf("core_unavailable: capture stderr: %w", err)
+	}
 	if err := m.command.Start(); err != nil {
 		m.command = nil
 		return fmt.Errorf("core_unavailable: %w", err)
@@ -48,7 +65,21 @@ func (m *ProcessManager) Start(ctx context.Context, args ...string) error {
 	m.done = make(chan struct{})
 	done := m.done
 	go func() {
-		_ = cmd.Wait()
+		var output sync.WaitGroup
+		output.Add(2)
+		go func() {
+			defer output.Done()
+			m.captureOutput(stdout, "stdout", os.Stdout)
+		}()
+		go func() {
+			defer output.Done()
+			m.captureOutput(stderr, "stderr", os.Stderr)
+		}()
+		err := cmd.Wait()
+		output.Wait()
+		if err != nil {
+			m.emitLog("process", fmt.Sprintf("Mihomo 进程退出: %v", err))
+		}
 		close(done)
 		m.mu.Lock()
 		if m.command == cmd {
@@ -58,6 +89,28 @@ func (m *ProcessManager) Start(ctx context.Context, args ...string) error {
 		m.mu.Unlock()
 	}()
 	return nil
+}
+
+func (m *ProcessManager) captureOutput(reader interface{ Read([]byte) (int, error) }, stream string, mirror *os.File) {
+	scanner := bufio.NewScanner(reader)
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fmt.Fprintln(mirror, line)
+		m.emitLog(stream, line)
+	}
+	if err := scanner.Err(); err != nil {
+		m.emitLog(stream, fmt.Sprintf("读取 Mihomo %s 日志失败: %v", stream, err))
+	}
+}
+
+func (m *ProcessManager) emitLog(stream, message string) {
+	m.mu.Lock()
+	handler := m.logHandler
+	m.mu.Unlock()
+	if handler != nil {
+		handler(stream, message)
+	}
 }
 
 func (m *ProcessManager) Monitor(ctx context.Context, maxRestarts int, backoff time.Duration, args ...string) {

@@ -19,14 +19,15 @@ func (r *JobRepo) Save(ctx context.Context, j *domain.Job) error {
 		return fmt.Errorf("invalid job status %q", j.Status)
 	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO jobs(id,kind,status,progress,entity_id,error,created_at,updated_at,finished_at)
-		VALUES(?,?,?,?,?,?,?,?,?)
+		INSERT INTO jobs(id,kind,status,progress,entity_id,error,error_code,error_detail,failure_stage,created_at,updated_at,finished_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			kind=excluded.kind, status=excluded.status, progress=excluded.progress,
 			entity_id=excluded.entity_id, error=excluded.error,
+			error_code=excluded.error_code, error_detail=excluded.error_detail, failure_stage=excluded.failure_stage,
 			updated_at=excluded.updated_at, finished_at=excluded.finished_at`,
 		j.ID, j.Kind, string(j.Status), j.Progress,
-		j.EntityID, j.Error,
+		j.EntityID, j.Error, j.ErrorCode, j.ErrorDetail, j.FailureStage,
 		encodeTime(j.CreatedAt), encodeTime(j.UpdatedAt),
 		encodeOptTime(j.FinishedAt),
 	)
@@ -35,7 +36,7 @@ func (r *JobRepo) Save(ctx context.Context, j *domain.Job) error {
 
 func (r *JobRepo) FindByID(ctx context.Context, id string) (*domain.Job, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id,kind,status,progress,entity_id,error,created_at,updated_at,finished_at FROM jobs WHERE id=?`, id)
+		`SELECT id,kind,status,progress,entity_id,error,error_code,error_detail,failure_stage,created_at,updated_at,finished_at FROM jobs WHERE id=?`, id)
 	j, err := scanJob(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, domain.ErrNotFound
@@ -44,7 +45,7 @@ func (r *JobRepo) FindByID(ctx context.Context, id string) (*domain.Job, error) 
 }
 
 func (r *JobRepo) FindAll(ctx context.Context, f domain.JobFilter) ([]domain.Job, error) {
-	q := `SELECT id,kind,status,progress,entity_id,error,created_at,updated_at,finished_at FROM jobs WHERE 1=1`
+	q := `SELECT id,kind,status,progress,entity_id,error,error_code,error_detail,failure_stage,created_at,updated_at,finished_at FROM jobs WHERE 1=1`
 	args := []interface{}{}
 	if f.Status != "" {
 		q += " AND status=?"
@@ -76,7 +77,7 @@ func (r *JobRepo) FindAll(ctx context.Context, f domain.JobFilter) ([]domain.Job
 }
 
 func (r *JobRepo) FindActive(ctx context.Context, limit int) ([]domain.Job, error) {
-	query := `SELECT id,kind,status,progress,entity_id,error,created_at,updated_at,finished_at FROM jobs WHERE status IN ('pending','scheduled','running','network_busy') AND kind IN ('refresh_upstream','test_connectivity','test_ping','test_throughput','test_group','test_node','recalculate_score','core_reload') ORDER BY created_at ASC`
+	query := `SELECT id,kind,status,progress,entity_id,error,error_code,error_detail,failure_stage,created_at,updated_at,finished_at FROM jobs WHERE status IN ('pending','scheduled','running','network_busy') AND kind IN ('refresh_upstream','test_connectivity','test_ping','test_throughput','test_group','test_node','recalculate_score','core_reload') ORDER BY created_at ASC`
 	args := []any{}
 	if limit > 0 {
 		query += " LIMIT ?"
@@ -100,7 +101,7 @@ func (r *JobRepo) FindActive(ctx context.Context, limit int) ([]domain.Job, erro
 
 func (r *JobRepo) CancelOrphanedActive(ctx context.Context) error {
 	now := encodeTime(nowUTC())
-	_, err := r.db.ExecContext(ctx, `UPDATE jobs SET status='cancelled',progress=100,error='service_restarted',updated_at=?,finished_at=? WHERE status IN ('pending','scheduled','running','network_busy')`, now, now)
+	_, err := r.db.ExecContext(ctx, `UPDATE jobs SET status='cancelled',progress=100,error='service_restarted',error_code='service_restarted',error_detail='任务在服务重启时被取消',failure_stage='lifecycle',updated_at=?,finished_at=? WHERE status IN ('pending','scheduled','running','network_busy')`, now, now)
 	return err
 }
 
@@ -115,6 +116,10 @@ func (r *JobRepo) DeleteAll(ctx context.Context) error {
 }
 
 func (r *JobRepo) UpdateStatus(ctx context.Context, id string, status domain.JobStatus, progress int, errMsg string) error {
+	return r.UpdateStatusDetail(ctx, id, status, progress, "", errMsg, "")
+}
+
+func (r *JobRepo) UpdateStatusDetail(ctx context.Context, id string, status domain.JobStatus, progress int, errorCode, errorDetail, failureStage string) error {
 	if !validJobStatus(status) {
 		return fmt.Errorf("invalid job status %q", status)
 	}
@@ -124,8 +129,8 @@ func (r *JobRepo) UpdateStatus(ctx context.Context, id string, status domain.Job
 		finishedAt = encodeTime(now)
 	}
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE jobs SET status=?, progress=?, error=?, updated_at=?, finished_at=? WHERE id=?`,
-		string(status), progress, errMsg, encodeTime(nowUTC()), finishedAt, id,
+		`UPDATE jobs SET status=?, progress=?, error=?, error_code=?, error_detail=?, failure_stage=?, updated_at=?, finished_at=? WHERE id=?`,
+		string(status), progress, firstNonEmpty(errorDetail, errorCode), errorCode, errorDetail, failureStage, encodeTime(nowUTC()), finishedAt, id,
 	)
 	if err != nil {
 		return err
@@ -135,6 +140,15 @@ func (r *JobRepo) UpdateStatus(ctx context.Context, id string, status domain.Job
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func validJobStatus(status domain.JobStatus) bool {
@@ -157,7 +171,7 @@ func scanJob(row jobScanner) (*domain.Job, error) {
 	var finishedAt sql.NullString
 	if err := row.Scan(
 		&j.ID, &j.Kind, &status, &j.Progress,
-		&j.EntityID, &j.Error,
+		&j.EntityID, &j.Error, &j.ErrorCode, &j.ErrorDetail, &j.FailureStage,
 		&createdAt, &updatedAt, &finishedAt,
 	); err != nil {
 		return nil, err

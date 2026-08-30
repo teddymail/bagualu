@@ -66,21 +66,25 @@ func toGroupResponse(g *domain.Group) groupResponse {
 }
 
 type jobResponse struct {
-	ID         string           `json:"id"`
-	Kind       string           `json:"kind"`
-	Status     domain.JobStatus `json:"status"`
-	Progress   int              `json:"progress"`
-	EntityID   string           `json:"entity_id,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
-	FinishedAt *time.Time       `json:"finished_at,omitempty"`
+	ID           string           `json:"id"`
+	Kind         string           `json:"kind"`
+	Status       domain.JobStatus `json:"status"`
+	Progress     int              `json:"progress"`
+	EntityID     string           `json:"entity_id,omitempty"`
+	Error        string           `json:"error,omitempty"`
+	ErrorCode    string           `json:"error_code,omitempty"`
+	ErrorDetail  string           `json:"error_detail,omitempty"`
+	FailureStage string           `json:"failure_stage,omitempty"`
+	CreatedAt    time.Time        `json:"created_at"`
+	UpdatedAt    time.Time        `json:"updated_at"`
+	FinishedAt   *time.Time       `json:"finished_at,omitempty"`
 }
 
 func toJobResponse(j *domain.Job) jobResponse {
 	return jobResponse{
 		ID: j.ID, Kind: j.Kind, Status: j.Status, Progress: j.Progress,
-		EntityID: j.EntityID, Error: j.Error,
+		EntityID: j.EntityID, Error: j.Error, ErrorCode: j.ErrorCode,
+		ErrorDetail: j.ErrorDetail, FailureStage: j.FailureStage,
 		CreatedAt: j.CreatedAt, UpdatedAt: j.UpdatedAt, FinishedAt: j.FinishedAt,
 	}
 }
@@ -255,6 +259,7 @@ type measurementResponse struct {
 	LoadThreshold               float64   `json:"load_threshold,omitempty"`
 	LoadSampleDurationMS        int64     `json:"load_sample_duration_ms,omitempty"`
 	ErrorCode                   string    `json:"error_code,omitempty"`
+	ErrorDetail                 string    `json:"error_detail,omitempty"`
 	FailureStage                string    `json:"failure_stage,omitempty"`
 	Infrastructure              bool      `json:"infrastructure"`
 	CoreEvidence                any       `json:"core_evidence,omitempty"`
@@ -267,7 +272,7 @@ func toMeasurementResponse(m domain.Measurement) measurementResponse {
 		LatencyMS: m.LatencyMS, FirstByteMS: m.FirstByteMS,
 		SpeedBytesPerSec:            m.SpeedBytesPerSec,
 		EffectiveDownloadDurationMS: m.EffectiveDownloadDurationMS,
-		Bytes:                       m.Bytes, ErrorCode: m.ErrorCode, FailureStage: m.FailureStage,
+		Bytes:                       m.Bytes, ErrorCode: m.ErrorCode, ErrorDetail: m.ErrorDetail, FailureStage: m.FailureStage,
 		UploadBytes:   m.UploadBytes,
 		ProxyProtocol: m.ProxyProtocol, TestURL: m.TestURL, ExitIP: m.ExitIP,
 		BaselineTarget: m.BaselineTarget, SpeedSource: m.SpeedSource, LoadStatus: m.LoadStatus,

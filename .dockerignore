@@ -1,0 +1,10 @@
+.git
+.github
+.idea
+.DS_Store
+.openwrt
+web/admin/node_modules
+web/admin/dist
+internal/transport/http/static
+*.ipk
+*.tgz

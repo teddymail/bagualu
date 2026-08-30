@@ -2,16 +2,19 @@ package httptransport
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/teddymail/bagualu/internal/domain"
+	"github.com/teddymail/bagualu/internal/infrastructure/logging"
 )
 
 // GET /api/v1/dashboard/summary
@@ -173,20 +176,126 @@ func (s *Server) systemConfigPut(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/system/logs
 func (s *Server) systemLogs(w http.ResponseWriter, r *http.Request) {
-	logs := make([]map[string]any, 0)
-	if s.store != nil {
-		jobs, err := s.store.JobRepo().FindAll(r.Context(), domainJobFilter{Limit: 100})
+	s.writeLogs(w, r, false, false)
+}
+
+// GET /api/v1/system/logs/stream
+func (s *Server) systemLogStream(w http.ResponseWriter, r *http.Request) {
+	s.writeLogs(w, r, true, false)
+}
+
+// GET /api/v1/system/core/logs
+func (s *Server) coreLogs(w http.ResponseWriter, r *http.Request) {
+	s.writeLogs(w, r, true, true)
+}
+
+func (s *Server) writeLogs(w http.ResponseWriter, r *http.Request, streamOnly, coreOnly bool) {
+	limit := 100
+	if value, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && value > 0 {
+		limit = value
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	service := r.URL.Query().Get("service")
+	if coreOnly {
+		service = "mihomo"
+	}
+	since, _ := strconv.ParseUint(r.URL.Query().Get("since"), 10, 64)
+	logs := make([]map[string]any, 0, limit)
+	if s.runtimeLogs != nil {
+		for _, entry := range s.runtimeLogs.Entries(logging.Query{
+			Service: service, Level: r.URL.Query().Get("level"), Query: r.URL.Query().Get("q"), Since: since, Limit: limit,
+		}) {
+			logEntry := map[string]any{
+				"id": entry.ID, "sequence": entry.ID, "time": entry.Time,
+				"level": entry.Level, "service": entry.Service, "stream": entry.Stream,
+				"kind": "runtime", "status": "logged", "progress": 100,
+				"message": entry.Message, "detail": entry.Message,
+				"error_code": detailErrorCode(entry.Message),
+			}
+			if !matchesLogFilters(r, logEntry) {
+				continue
+			}
+			logs = append(logs, logEntry)
+		}
+	}
+	if !streamOnly && !coreOnly && s.store != nil && since == 0 {
+		jobs, err := s.store.JobRepo().FindAll(r.Context(), domainJobFilter{Limit: limit})
 		if err == nil {
 			for _, job := range jobs {
-				logs = append(logs, map[string]any{
-					"time": job.UpdatedAt, "level": jobLogLevel(job.Status),
-					"message": "任务 " + string(job.Kind) + " 状态: " + string(job.Status),
-					"job_id":  job.ID,
-				})
+				level := jobLogLevel(job.Status)
+				detail := job.ErrorDetail
+				if detail == "" && job.Error != "" && job.Error != job.ErrorCode {
+					detail = job.Error
+				}
+				errorCode := job.ErrorCode
+				if errorCode == "" && detail != "" {
+					errorCode = detailErrorCode(detail)
+				}
+				if detail == "" && !job.IsTerminal() {
+					detail = "任务正在等待执行或处理中"
+				}
+				message := fmt.Sprintf("任务 %s 状态: %s", job.Kind, job.Status)
+				if detail != "" && (level == "error" || job.Status == domain.JobCancelled) {
+					message += "；" + detail
+				}
+				logEntry := map[string]any{
+					"id": job.ID + ":" + string(job.Status), "time": job.UpdatedAt,
+					"level": level, "service": "bagualu", "kind": job.Kind,
+					"status": job.Status, "progress": job.Progress,
+					"message": message, "detail": detail, "job_id": job.ID,
+					"node_id": job.EntityID, "error_code": errorCode,
+					"failure_stage": job.FailureStage, "created_at": job.CreatedAt,
+					"finished_at": job.FinishedAt,
+				}
+				if matchesLogFilters(r, logEntry) {
+					logs = append(logs, logEntry)
+				}
 			}
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
+	sort.SliceStable(logs, func(i, j int) bool {
+		left, _ := logs[i]["time"].(time.Time)
+		right, _ := logs[j]["time"].(time.Time)
+		return left.After(right)
+	})
+	if len(logs) > limit {
+		logs = logs[:limit]
+	}
+	response := map[string]any{"logs": logs}
+	if s.runtimeLogs != nil {
+		response["next_since"] = s.runtimeLogs.LatestID()
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func matchesLogFilters(r *http.Request, entry map[string]any) bool {
+	query := r.URL.Query()
+	for _, key := range []string{"level", "service", "kind", "job_id", "node_id", "error_code"} {
+		if value := query.Get(key); value != "" && fmt.Sprint(entry[key]) != value {
+			return false
+		}
+	}
+	if value := strings.TrimSpace(query.Get("q")); value != "" {
+		needle := strings.ToLower(value)
+		searchable := strings.ToLower(strings.Join([]string{
+			fmt.Sprint(entry["message"]), fmt.Sprint(entry["detail"]),
+			fmt.Sprint(entry["job_id"]), fmt.Sprint(entry["node_id"]),
+			fmt.Sprint(entry["error_code"]), fmt.Sprint(entry["failure_stage"]),
+		}, " "))
+		if !strings.Contains(searchable, needle) {
+			return false
+		}
+	}
+	return true
+}
+
+func detailErrorCode(detail string) string {
+	if !strings.Contains(detail, ":") && !strings.Contains(detail, " ") {
+		return detail
+	}
+	return ""
 }
 
 func (s *Server) coreDiagnose(w http.ResponseWriter, r *http.Request) {

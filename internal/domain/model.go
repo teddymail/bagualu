@@ -44,7 +44,7 @@ type Score struct {
 }
 
 type Measurement struct {
-	ID, NodeID, Kind, ErrorCode, FailureStage                               string
+	ID, NodeID, Kind, ErrorCode, ErrorDetail, FailureStage                  string
 	Success                                                                 bool
 	LatencyMS, FirstByteMS, SpeedBytesPerSec, EffectiveDownloadDurationMS   float64
 	Bytes                                                                   int64

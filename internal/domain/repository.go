@@ -78,6 +78,7 @@ type JobRepository interface {
 	DeleteAll(ctx context.Context) error
 	// UpdateStatus advances a job's status, progress percentage, and error message.
 	UpdateStatus(ctx context.Context, id string, status JobStatus, progress int, errMsg string) error
+	UpdateStatusDetail(ctx context.Context, id string, status JobStatus, progress int, errorCode, errorDetail, failureStage string) error
 }
 
 // APIKeyRepository handles persistence of API key records.

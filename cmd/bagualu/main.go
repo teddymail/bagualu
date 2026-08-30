@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/teddymail/bagualu/internal/application"
 	"github.com/teddymail/bagualu/internal/domain"
+	"github.com/teddymail/bagualu/internal/infrastructure/logging"
 	"github.com/teddymail/bagualu/internal/infrastructure/mihomo"
 	"github.com/teddymail/bagualu/internal/infrastructure/network"
 	"github.com/teddymail/bagualu/internal/infrastructure/persistence"
@@ -50,6 +51,8 @@ func main() {
 	configFile := flag.String("config", "", "OpenWrt UCI-style configuration file")
 	statusFile := flag.String("status-file", "", "runtime status JSON file for LuCI")
 	flag.Parse()
+	runtimeLogs := logging.NewBuffer(1000)
+	log.SetOutput(io.MultiWriter(os.Stderr, runtimeLogs.Writer("bagualu", "stderr")))
 	runCtx, stopRun := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopRun()
 	uciValues := map[string]string{}
@@ -170,6 +173,9 @@ func main() {
 	}
 	mihomoConfigPath := filepath.Join(configDir, "bagualu.yaml")
 	process := mihomo.NewProcessManager(*binary, mihomoConfigPath)
+	process.SetLogHandler(func(stream, message string) {
+		runtimeLogs.Add("mihomo", stream, logging.DetectLevel(message), message)
+	})
 	installer := mihomo.NewInstaller(*binary, *mihomoRepository, *mihomoVersion)
 	startupError := ""
 	var startupErrorMu sync.RWMutex
@@ -386,7 +392,7 @@ func main() {
 				}
 			}
 			measurement := &domain.Measurement{ID: outcome.JobID, NodeID: outcome.NodeID, Kind: string(outcome.Kind),
-				Success: outcome.Success, ErrorCode: outcome.ErrorCode, FailureStage: outcome.FailureStage,
+				Success: outcome.Success, ErrorCode: outcome.ErrorCode, ErrorDetail: outcome.ErrorDetail, FailureStage: outcome.FailureStage,
 				LatencyMS: outcome.LatencyMS, FirstByteMS: outcome.FirstByteMS, SpeedBytesPerSec: outcome.SpeedBytesPerSec,
 				EffectiveDownloadDurationMS: outcome.EffectiveDownloadDurationMS, Bytes: outcome.DownloadBytes,
 				ProxyProtocol: outcome.ProxyProtocol, TestURL: outcome.TestURL, ExitIP: outcome.ExitIP,
@@ -419,7 +425,12 @@ func main() {
 			case !outcome.Success:
 				status = domain.JobFailed
 			}
-			_ = store.JobRepo().UpdateStatus(context.Background(), outcome.JobID, status, 100, outcome.ErrorCode)
+			detail := outcome.ErrorDetail
+			if detail == "" {
+				detail = outcome.ErrorCode
+			}
+			_ = store.JobRepo().UpdateStatusDetail(context.Background(), outcome.JobID, status, 100,
+				outcome.ErrorCode, detail, outcome.FailureStage)
 		})
 	queueDone := make(chan struct{})
 	go func() {
@@ -479,7 +490,10 @@ func main() {
 				target = selectSpeedSource(policy, time.Now())
 			}
 			if target == "" {
-				return "", fmt.Errorf("%s", domain.ErrCodeSpeedSourceUnavailable)
+				err := fmt.Errorf("%s: no healthy download source is configured", domain.ErrCodeSpeedSourceUnavailable)
+				_ = store.JobRepo().UpdateStatusDetail(context.Background(), jobID, domain.JobFailed, 100,
+					domain.ErrCodeSpeedSourceUnavailable, err.Error(), "speed_source")
+				return "", err
 			}
 		}
 		job := application.TestJob{ID: jobID, NodeID: nodeID, Kind: kind}
@@ -524,7 +538,8 @@ func main() {
 			return outcome, pingErr
 		}
 		if err := orchestrator.Submit(job); err != nil {
-			_ = store.JobRepo().UpdateStatus(context.Background(), jobID, domain.JobFailed, 100, err.Error())
+			_ = store.JobRepo().UpdateStatusDetail(context.Background(), jobID, domain.JobFailed, 100,
+				domain.ErrCodeMeasurementFailed, err.Error(), "queue")
 			return "", err
 		}
 		return jobID, nil
@@ -605,6 +620,7 @@ func main() {
 		CoreInstallStatus: coreInstallStatus,
 		CoreInstall:       coreInstall,
 		CoreInstallUpload: coreInstallUpload,
+		RuntimeLogs:       runtimeLogs,
 		CoreRuntime: func(ctx context.Context) map[string]any {
 			snapshot, err := core.GetConnections(ctx)
 			if err != nil {

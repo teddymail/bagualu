@@ -42,6 +42,7 @@ type MeasurementOutcome struct {
 	Status                      string
 	Success                     bool
 	ErrorCode                   string
+	ErrorDetail                 string
 	FailureStage                string
 	Infrastructure              bool
 	LatencyMS                   float64

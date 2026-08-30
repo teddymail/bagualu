@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
  progress INTEGER NOT NULL DEFAULT 0, entity_id TEXT NOT NULL DEFAULT '',
  error TEXT NOT NULL DEFAULT '',
+ error_code TEXT NOT NULL DEFAULT '', error_detail TEXT NOT NULL DEFAULT '', failure_stage TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
