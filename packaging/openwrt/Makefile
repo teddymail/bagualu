@@ -3,7 +3,7 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=bagualu
 PKG_RELEASE?=12
 PKG_VERSION?=0.1.0
-BAGUALU_BINARY?=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/bagualu)
+BAGUALU_BINARY:=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/bagualu)
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk

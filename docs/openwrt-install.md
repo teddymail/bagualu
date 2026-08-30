@@ -1,6 +1,6 @@
 # 八卦炉 OpenWrt 安装
 
-只有推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.1`）才会触发 workflow，并按 tag 版本打包、自动创建 GitHub Release，当前提供 x86_64 和 ARM64 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
+只有推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.4`）才会触发 workflow，并按 tag 版本打包、自动创建 GitHub Release，当前提供 x86_64 和 ARM64 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
 
 ## 安装
 
@@ -19,7 +19,7 @@ uci commit bagualu
 
 如果设备访问 GitHub 时出现 TLS 或网络限制，在电脑上下载匹配架构的 Mihomo Linux 文件，点击同页“上传 Mihomo 文件”即可；上传文件会经过 ELF 校验后安装，不需要 SSH 手工复制。
 
-也可以在 LuCI 的八卦炉配置中指定 `mihomo_repository` 和 `mihomo_version`，默认使用 `MetaCubeX/mihomo` 的 `latest` 发行版。
+Mihomo 仓库、版本和内核路径使用程序内置默认值，不在 LuCI 的基础设置中开放修改；需要更换内核时，使用管理后台系统设置中的 Mihomo 安装功能。
 
 LuCI 页面：
 
