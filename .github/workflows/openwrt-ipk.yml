@@ -73,6 +73,7 @@ jobs:
         run: |
           mkdir -p package
           cp -a packaging/openwrt package/bagualu
+          cp .openwrt/bagualu package/bagualu/bagualu
 
       - name: Build package with OpenWrt SDK
         uses: openwrt/gh-action-sdk@v9
