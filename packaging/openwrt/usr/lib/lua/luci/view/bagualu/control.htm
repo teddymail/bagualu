@@ -1,0 +1,82 @@
+<div class="cbi-section bagualu-service-control">
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:期望状态%></label>
+    <div class="cbi-value-field"><span data-status="expected-state">-</span></div>
+  </div>
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:八卦炉状态%></label>
+    <div class="cbi-value-field"><span data-status="service-state"><%:Loading...%></span></div>
+  </div>
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:进程状态%></label>
+    <div class="cbi-value-field"><span data-status="process-detail">-</span></div>
+  </div>
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:端口%></label>
+    <div class="cbi-value-field"><span data-status="port-detail">-</span></div>
+  </div>
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:最近操作%></label>
+    <div class="cbi-value-field"><span data-status="operation">-</span></div>
+  </div>
+  <div class="cbi-value">
+    <label class="cbi-value-title"><%:服务控制%></label>
+    <div class="cbi-value-field">
+      <button class="btn cbi-button cbi-button-apply" type="button" data-action="start"><%:启动%></button>
+      <button class="btn cbi-button cbi-button-reset" type="button" data-action="stop"><%:停止%></button>
+      <button class="btn cbi-button cbi-button-apply" type="button" data-action="restart"><%:重启%></button>
+      <button class="btn cbi-button cbi-button-apply" type="button" data-action="enable"><%:启用%></button>
+      <button class="btn cbi-button cbi-button-reset" type="button" data-action="disable"><%:禁用%></button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var root = document.querySelector('.bagualu-service-control');
+  if (!root) return;
+  var statusURL = '<%=luci.dispatcher.build_url("admin/services/bagualu/status")%>';
+  var actionURL = '<%=luci.dispatcher.build_url("admin/services/bagualu/action")%>';
+
+  function text(name, value) {
+    var element = root.querySelector('[data-status="' + name + '"]');
+    if (element) element.textContent = value === undefined || value === null || value === '' ? '-' : String(value);
+  }
+
+  function refresh() {
+    fetch(statusURL, {credentials: 'same-origin'})
+      .then(function (response) {
+        if (!response.ok) throw new Error('status request failed');
+        return response.json();
+      })
+      .then(function (data) {
+        var core = data.mihomo || {};
+        text('expected-state', data.expected_state);
+        text('service-state', data.service_state);
+        text('process-detail', '八卦炉 PID ' + (data.bagualu_pid || 0) + ' · Mihomo ' + (core.state || (core.available ? 'running' : 'stopped')) + ' · PID ' + (data.mihomo_pid || core.pid || 0));
+        text('port-detail', '管理 ' + (data.management || '-') + ' · 控制 ' + (data.control || '-') + ' · 代理 ' + (data.proxy || '-'));
+        text('operation', data.operation_id ? data.operation_id + ' · ' + (data.operation_action || '-') + ' · ' + (data.operation_status || '-') : (data.error_code || data.error || '-'));
+      })
+      .catch(function () { text('service-state', '<%:状态不可用%>'); });
+  }
+
+  root.querySelectorAll('[data-action]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      fetch(actionURL + '/' + button.getAttribute('data-action'), {method: 'POST', credentials: 'same-origin'})
+        .then(function (response) {
+          if (!response.ok) throw new Error('action request failed');
+          return response.json();
+        })
+        .then(function (data) {
+          text('operation', data.operation_id ? data.operation_id + ' · <%:已提交%>' : '<%:已提交%>');
+          refresh();
+        })
+        .catch(function () { text('operation', '<%:操作失败%>'); })
+        .finally(function () { button.disabled = false; });
+    });
+  });
+
+  refresh();
+  window.setInterval(refresh, 1000);
+}());
+</script>

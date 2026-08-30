@@ -17,6 +17,17 @@ start_service() {
 	procd_close_instance
 }
 
+stop_service() {
+	config_load bagualu
+	config_get data_dir main data_dir /var/lib/bagualu
+	for pid in $(pidof mihomo 2>/dev/null); do
+		cmdline=$(tr '\0' ' ' </proc/$pid/cmdline 2>/dev/null || true)
+		case "$cmdline" in
+			*"-f $data_dir/bagualu.yaml"*) kill -9 "$pid" 2>/dev/null || true ;;
+		esac
+	done
+}
+
 service_triggers() {
 	procd_add_reload_trigger bagualu
 }

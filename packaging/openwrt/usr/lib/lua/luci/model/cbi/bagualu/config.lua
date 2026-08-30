@@ -1,99 +1,47 @@
-local m, s, o
+local m, s, o, control
 
 m = Map("bagualu", translate("八卦炉配置"))
-m.description = translate("系统设置保存在 UCI 中，并由八卦炉 procd 服务应用。")
+m.description = translate("这里只保留服务开关、管理端口和后台密码重置；Mihomo、测速、WAN、目录和内核参数使用内置默认值。")
 
-s = m:section(TypedSection, "bagualu", translate("Service and Mihomo"))
+s = m:section(TypedSection, "bagualu", translate("八卦炉基础设置"))
 s.anonymous = true
 s.addremove = false
 
-o = s:option(Flag, "enabled", translate("Enable service"))
+o = s:option(Flag, "enabled", translate("启用八卦炉服务"))
 o.default = "1"
+o.description = translate("控制八卦炉是否随系统运行。")
 
-o = s:option(Value, "listen", translate("Management listen address"))
+o = s:option(Value, "listen", translate("管理监听地址"))
 o.datatype = "ipaddr"
-o.default = "127.0.0.1"
+o.default = "0.0.0.0"
 
-o = s:option(Value, "port", translate("Management port"))
+o = s:option(Value, "port", translate("八卦炉管理端口"))
 o.datatype = "port"
-o.default = "8787"
+o.default = "18787"
+o.description = translate("管理后台监听端口，修改后保存将自动重载八卦炉。")
 
-o = s:option(Value, "data_dir", translate("Data directory"))
-o.default = "/var/lib/bagualu"
-
-o = s:option(Value, "status_file", translate("Runtime status file"))
-o.default = "/var/run/bagualu/status.json"
-o.description = translate("Used by LuCI to show diagnostics even when the management HTTP port is unavailable.")
-
-o = s:option(Value, "mihomo_control_port", translate("Mihomo control port"))
-o.datatype = "port"
-o.default = "9090"
-
-o = s:option(Value, "mihomo_proxy_port", translate("Mihomo proxy port"))
-o.datatype = "port"
-o.default = "7890"
-
-o = s:option(Value, "mihomo_binary", translate("Mihomo binary"))
-o.default = "/usr/bin/mihomo"
-
-o = s:option(Value, "mihomo_repository", translate("Mihomo release repository"))
-o.default = "MetaCubeX/mihomo"
-o.description = translate("The managed core installer downloads the selected release from this GitHub repository.")
-
-o = s:option(Value, "mihomo_version", translate("Mihomo release version"))
-o.default = "latest"
-o.description = translate("Use latest or a release tag such as v1.19.12.")
-
-o = s:option(Value, "mihomo_token", translate("Mihomo control token"))
+o = s:option(Value, "admin_password", translate("重置八卦炉后台密码"))
 o.password = true
+o.rmempty = true
+o.datatype = "minlength(8)"
+o.description = translate("填写后保存即可直接覆盖后台密码，不需要旧密码；重置完成后该值会自动清空。")
 
-o = s:option(Value, "mihomo_selector", translate("Mihomo test selector"))
-o.default = "八卦炉-Test"
-
-o = s:option(Value, "admin_password", translate("Initial admin password"))
-o.password = true
-o.description = translate("Used only for the first Bagualu backend initialization. Change the LuCI login password in System > Administration.")
-
-o = s:option(Value, "test_queue_limit", translate("Test queue limit"))
-o.datatype = "uinteger"
-o.default = "32"
-
-o = s:option(Value, "interval_seconds", translate("Ping interval (seconds)"))
-o.datatype = "uinteger"
-o.default = "60"
-
-o = s:option(Flag, "throughput_enabled", translate("Enable daily download tests"))
-o.default = "1"
-o.description = translate("Each active node is tested once per day through the selected Mihomo route.")
-
-o = s:option(Value, "throughput_url", translate("Download test URL"))
-o.default = "https://speed.cloudflare.com/__down?bytes=1048576"
-
-o = s:option(Value, "throughput_urls", translate("Download test URLs"))
-o.description = translate("Optional comma-separated sources. One stable source is selected for each daily batch.")
-
-o = s:option(Value, "throughput_bytes", translate("Per-node download bytes"))
-o.datatype = "uinteger"
-o.default = "1048576"
-o.description = translate("The download size used for each daily node test.")
-
-o = s:option(Value, "throughput_windows", translate("Daily test time windows"))
-o.default = "02:00-06:00"
-o.description = translate("Comma-separated local time windows, for example 02:00-06:00. Leave empty to allow all day.")
-
-o = s:option(Value, "wan_download_bps", translate("WAN download capacity (B/s)"))
-o.datatype = "uinteger"
-o.default = "0"
-
-o = s:option(Value, "wan_upload_bps", translate("WAN upload capacity (B/s)"))
-o.datatype = "uinteger"
-o.default = "0"
-
-o = s:option(Value, "load_threshold", translate("WAN load threshold"))
-o.datatype = "ufloat"
-o.default = "0.1"
+control = m:section(SimpleSection, translate("服务状态与控制"))
+control.template = "bagualu/control"
 
 function m.on_after_commit(self)
+  local uci = require("uci").cursor()
+  local util = require("luci.util")
+  local password = uci:get("bagualu", "main", "admin_password")
+  if password and password ~= "" then
+    local command = "printf '%s' " .. util.shellquote(password) .. " | /usr/bin/bagualu -config /etc/config/bagualu -reset-password-stdin >/tmp/bagualu-password-reset.log 2>&1"
+    local exit_code = luci.sys.call(command)
+    uci:delete("bagualu", "main", "admin_password")
+    uci:commit("bagualu")
+    if exit_code ~= 0 then
+      self.message = translate("八卦炉密码重置失败，请检查 /tmp/bagualu-password-reset.log。")
+    end
+  end
   require("luci.sys").call("/etc/init.d/bagualu reload >/dev/null 2>&1")
 end
 

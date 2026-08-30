@@ -38,6 +38,7 @@ func (m *ProcessManager) Start(ctx context.Context, args ...string) error {
 		return fmt.Errorf("core_unavailable: %w", err)
 	}
 	m.command = exec.CommandContext(ctx, m.binary, append([]string{"-f", m.config}, args...)...)
+	configureCommand(m.command)
 	m.command.Stdout, m.command.Stderr = os.Stdout, os.Stderr
 	if err := m.command.Start(); err != nil {
 		m.command = nil
@@ -123,7 +124,7 @@ func (m *ProcessManager) Stop() error {
 		return nil
 	}
 	cmd, done := m.command, m.done
-	err := cmd.Process.Kill()
+	err := killCommand(cmd)
 	m.mu.Unlock()
 	<-done
 	m.mu.Lock()

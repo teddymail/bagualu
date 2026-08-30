@@ -5,10 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/teddymail/bagualu/internal/infrastructure/persistence"
 )
 
 const (
@@ -16,6 +19,18 @@ const (
 	settingKeyAdminUsername     = "admin_username"
 	sessionTTL                  = 24 * time.Hour
 )
+
+// ResetAdminPassword overwrites the Bagualu backend password without requiring the old password.
+// It is intended for trusted local administration through OpenWrt LuCI.
+func ResetAdminPassword(ctx context.Context, store *persistence.Store, password string) error {
+	if store == nil {
+		return errors.New("settings store unavailable")
+	}
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+	return store.SettingsRepo().Set(ctx, settingKeyAdminPasswordHash, hashPassword(password))
+}
 
 // sessionStore is an in-memory store for admin sessions.
 type sessionStore struct {

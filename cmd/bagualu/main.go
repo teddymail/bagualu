@@ -32,11 +32,11 @@ import (
 )
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8787", "management listen address")
-	control := flag.String("mihomo-control", "http://127.0.0.1:9090", "managed Mihomo control API")
+	listen := flag.String("listen", "127.0.0.1:18787", "management listen address")
+	control := flag.String("mihomo-control", "http://127.0.0.1:19090", "managed Mihomo control API")
 	token := flag.String("mihomo-token", "", "managed Mihomo API token")
 	binary := flag.String("mihomo-binary", "", "Bagualu-managed Mihomo executable (auto-detected when empty)")
-	proxyPort := flag.Int("mihomo-proxy-port", 7890, "Bagualu-managed local mixed proxy port")
+	proxyPort := flag.Int("mihomo-proxy-port", 17890, "Bagualu-managed local mixed proxy port")
 	selector := flag.String("mihomo-selector", "Bagualu-Test", "private Mihomo selector group")
 	mihomoRepository := flag.String("mihomo-repository", "MetaCubeX/mihomo", "official Mihomo release repository")
 	mihomoVersion := flag.String("mihomo-version", "latest", "Mihomo release tag or latest")
@@ -46,6 +46,7 @@ func main() {
 	queueLimit := flag.Int("test-queue-limit", 32, "maximum pending test tasks")
 	dbPath := flag.String("db", "/etc/bagualu/bagualu.db", "SQLite database path")
 	adminPassword := flag.String("admin-password", "admin", "initial admin password (used once if none is set)")
+	resetPasswordStdin := flag.Bool("reset-password-stdin", false, "reset the Bagualu admin password from stdin and exit")
 	configFile := flag.String("config", "", "OpenWrt UCI-style configuration file")
 	statusFile := flag.String("status-file", "", "runtime status JSON file for LuCI")
 	flag.Parse()
@@ -61,7 +62,7 @@ func main() {
 		if value := values["listen"]; value != "" {
 			port := values["port"]
 			if port == "" {
-				port = "8787"
+				port = "18787"
 			}
 			*listen = net.JoinHostPort(value, port)
 		}
@@ -94,22 +95,14 @@ func main() {
 		if value := values["mihomo_version"]; value != "" {
 			*mihomoVersion = value
 		}
-		if value := values["wan_download_bps"]; value != "" {
-			*wanDownload, _ = strconv.ParseFloat(value, 64)
-		}
-		if value := values["wan_upload_bps"]; value != "" {
-			*wanUpload, _ = strconv.ParseFloat(value, 64)
-		}
-		if value := values["load_threshold"]; value != "" {
-			*loadThreshold, _ = strconv.ParseFloat(value, 64)
-		}
+		*wanDownload, *wanUpload, *loadThreshold = parseBandwidthConfig(*wanDownload, *wanUpload, *loadThreshold, values)
 		if value := values["test_queue_limit"]; value != "" {
 			if parsed, parseErr := strconv.Atoi(value); parseErr == nil {
 				*queueLimit = parsed
 			}
-			if value := values["status_file"]; value != "" {
-				*statusFile = value
-			}
+		}
+		if value := values["status_file"]; value != "" {
+			*statusFile = value
 		}
 	}
 	if *binary == "" {
@@ -123,6 +116,28 @@ func main() {
 
 	if err := os.MkdirAll(filepath.Dir(*dbPath), 0700); err != nil {
 		log.Fatalf("create data directory: %v", err)
+	}
+	if *resetPasswordStdin {
+		passwordBytes, err := io.ReadAll(io.LimitReader(os.Stdin, 4097))
+		if err != nil {
+			log.Fatalf("read reset password: %v", err)
+		}
+		password := strings.TrimRight(string(passwordBytes), "\r\n")
+		if len(password) < 8 {
+			log.Fatal("reset password must be at least 8 characters")
+		}
+		resetStore, err := persistence.Open(*dbPath)
+		if err != nil {
+			log.Fatalf("open database for password reset: %v", err)
+		}
+		if err := httptransport.ResetAdminPassword(context.Background(), resetStore, password); err != nil {
+			resetStore.Close()
+			log.Fatalf("reset Bagualu admin password: %v", err)
+		}
+		if err := resetStore.Close(); err != nil {
+			log.Fatalf("close database after password reset: %v", err)
+		}
+		return
 	}
 	store, err := persistence.Open(*dbPath)
 	if err != nil {
@@ -333,17 +348,7 @@ func main() {
 		return application.TrafficSample{DownloadBytes: traffic.DownloadBytes, UploadBytes: traffic.UploadBytes}, err
 	}
 	loadGuard := application.NewBandwidthLoadGuard(trafficReader, func() (float64, float64, float64) {
-		download, upload, threshold := *wanDownload, *wanUpload, *loadThreshold
-		if raw, err := store.SettingsRepo().Get(context.Background(), "wan_download_bps"); err == nil && raw != "" {
-			download, _ = strconv.ParseFloat(raw, 64)
-		}
-		if raw, err := store.SettingsRepo().Get(context.Background(), "wan_upload_bps"); err == nil && raw != "" {
-			upload, _ = strconv.ParseFloat(raw, 64)
-		}
-		if raw, err := store.SettingsRepo().Get(context.Background(), "load_threshold"); err == nil && raw != "" {
-			threshold, _ = strconv.ParseFloat(raw, 64)
-		}
-		return download, upload, threshold
+		return *wanDownload, *wanUpload, *loadThreshold
 	})
 	orchestrator := application.NewOrchestrator(queue, &application.ICMPBaseline{}, loadGuard,
 		func(outcome domain.MeasurementOutcome) {
@@ -666,14 +671,16 @@ func main() {
 	log.Printf("bagualu listening on %s", *listen)
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(managementListener) }()
-	select {
-	case <-runCtx.Done():
+	shutdown := func(closeServer bool) {
 		if err := process.Stop(); err != nil {
 			log.Printf("stop Mihomo during shutdown: %v", err)
 		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("shutdown management server: %v", err)
+		defer cancel()
+		if closeServer {
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown management server: %v", err)
+			}
 		}
 		select {
 		case <-schedulerDone:
@@ -688,30 +695,16 @@ func main() {
 		case <-shutdownCtx.Done():
 			log.Printf("test queue worker shutdown timeout")
 		}
-		cancel()
+	}
+	select {
+	case <-runCtx.Done():
+		shutdown(true)
 	case err := <-serverErrors:
 		if err != nil && err != http.ErrServerClosed {
 			log.Printf("management server stopped: %v", err)
 		}
 		stopRun()
-		if err := process.Stop(); err != nil {
-			log.Printf("stop Mihomo after server shutdown: %v", err)
-		}
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if !queue.WaitUntilIdle(shutdownCtx) {
-			log.Printf("test queue shutdown timeout")
-		}
-		select {
-		case <-schedulerDone:
-		case <-shutdownCtx.Done():
-			log.Printf("scheduler shutdown timeout")
-		}
-		select {
-		case <-queueDone:
-		case <-shutdownCtx.Done():
-			log.Printf("test queue worker shutdown timeout")
-		}
-		cancel()
+		shutdown(false)
 	}
 }
 
@@ -823,6 +816,25 @@ func loadTestPolicy(ctx context.Context, store *persistence.Store, uciValues ...
 		applyUCIOverrides(&policy, uciValues[0])
 	}
 	return policy
+}
+
+func parseBandwidthConfig(download, upload, threshold float64, values map[string]string) (float64, float64, float64) {
+	if value := values["wan_download_bps"]; value != "" {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			download = parsed
+		}
+	}
+	if value := values["wan_upload_bps"]; value != "" {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			upload = parsed
+		}
+	}
+	if value := values["load_threshold"]; value != "" {
+		if parsed, err := strconv.ParseFloat(value, 64); err == nil {
+			threshold = parsed
+		}
+	}
+	return download, upload, threshold
 }
 
 func applyUCIOverrides(policy *runtimeTestPolicy, values map[string]string) {

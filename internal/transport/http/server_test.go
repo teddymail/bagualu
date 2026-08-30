@@ -195,6 +195,21 @@ func TestAuthChangePassword(t *testing.T) {
 	}
 }
 
+func TestResetAdminPassword(t *testing.T) {
+	srv, store := newTestServer(t)
+	if err := httptransport.ResetAdminPassword(context.Background(), store, "resetpass"); err != nil {
+		t.Fatal(err)
+	}
+	old := doRequest(t, srv.Handler(), "POST", "/api/v1/auth/login", map[string]string{"password": "testpass"}, nil)
+	if old.Code != http.StatusUnauthorized {
+		t.Fatalf("old password should be rejected, want 401 got %d", old.Code)
+	}
+	newPassword := doRequest(t, srv.Handler(), "POST", "/api/v1/auth/login", map[string]string{"password": "resetpass"}, nil)
+	if newPassword.Code != http.StatusOK {
+		t.Fatalf("reset password should be accepted, want 200 got %d", newPassword.Code)
+	}
+}
+
 // ── system endpoints ──────────────────────────────────────────────────────────
 
 func TestSystemStatus(t *testing.T) {

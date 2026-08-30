@@ -1,6 +1,6 @@
 <%
 local uci = require("uci").cursor()
-local management_port = uci:get("bagualu", "main", "port") or "8787"
+local management_port = uci:get("bagualu", "main", "port") or "18787"
 local host = luci.http.getenv("HTTP_HOST") or "127.0.0.1"
 host = host:gsub(":%d+$", "")
 local management_url = "http://" .. host .. ":" .. management_port .. "/"
@@ -23,8 +23,8 @@ local management_url = "http://" .. host .. ":" .. management_port .. "/"
     <h3><%:管理操作%></h3>
     <div class="cbi-value"><label class="cbi-value-title"><%:管理后台%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="<%=management_url%>" target="_blank" rel="noreferrer"><%:Open management backend%>（:<%=management_port%>）</a></div></div>
     <div class="cbi-value"><label class="cbi-value-title"><%:系统配置%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="<%=luci.dispatcher.build_url('admin/services/bagualu/config')%>"><%:Configure in LuCI%></a></div></div>
-    <div class="cbi-value"><label class="cbi-value-title"><%:LuCI 管理密码%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="<%=luci.dispatcher.build_url('admin/system/admin')%>"><%:设置或修改 LuCI 登录密码%></a></div></div>
-    <div class="cbi-value"><label class="cbi-value-title"><%:服务控制%></label><div class="cbi-value-field"><button class="btn cbi-button cbi-button-apply" data-action="start"><%:Start%></button> <button class="btn cbi-button cbi-button-reset" data-action="stop"><%:Stop%></button> <button class="btn cbi-button cbi-button-apply" data-action="restart"><%:Restart%></button> <button class="btn cbi-button cbi-button-apply" data-action="enable"><%:Enable%></button> <button class="btn cbi-button cbi-button-reset" data-action="disable"><%:Disable%></button></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:八卦炉登录密码%></label><div class="cbi-value-field"><a class="btn cbi-button cbi-button-apply" href="<%=luci.dispatcher.build_url('admin/services/bagualu/config')%>"><%:在 LuCI 中直接重置八卦炉密码%></a></div></div>
+    <div class="cbi-value"><label class="cbi-value-title"><%:服务控制%></label><div class="cbi-value-field"><button class="btn cbi-button cbi-button-apply" data-action="start"><%:启动%></button> <button class="btn cbi-button cbi-button-reset" data-action="stop"><%:停止%></button> <button class="btn cbi-button cbi-button-apply" data-action="restart"><%:重启%></button> <button class="btn cbi-button cbi-button-apply" data-action="enable"><%:启用%></button> <button class="btn cbi-button cbi-button-reset" data-action="disable"><%:禁用%></button></div></div>
   </div>
 </div>
 <script>

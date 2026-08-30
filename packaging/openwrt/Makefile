@@ -41,6 +41,7 @@ define Package/bagualu/install
 	$(INSTALL_DATA) ./usr/share/rpcd/acl.d/luci-app-bagualu.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_DATA) ./usr/lib/lua/luci/controller/bagualu.lua $(1)/usr/lib/lua/luci/controller/
 	$(INSTALL_DATA) ./usr/lib/lua/luci/view/bagualu/status.htm $(1)/usr/lib/lua/luci/view/bagualu/
+	$(INSTALL_DATA) ./usr/lib/lua/luci/view/bagualu/control.htm $(1)/usr/lib/lua/luci/view/bagualu/
 	$(INSTALL_DATA) ./usr/lib/lua/luci/model/cbi/bagualu/config.lua $(1)/usr/lib/lua/luci/model/cbi/bagualu/
 endef
 

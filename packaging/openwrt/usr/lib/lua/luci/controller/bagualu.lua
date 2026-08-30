@@ -39,10 +39,14 @@ function status()
   end
   local operation = read_operation()
   if operation and operation.status == "submitted" then
-    if operation.action == "start" or operation.action == "restart" or operation.action == "enable" then
+    if operation.action == "start" or operation.action == "restart" then
       if running then operation.status = "succeeded" end
-    elseif operation.action == "stop" or operation.action == "disable" then
+    elseif operation.action == "stop" then
       if not running then operation.status = "succeeded" end
+    elseif operation.action == "enable" then
+      if read_enabled() then operation.status = "succeeded" end
+    elseif operation.action == "disable" then
+      if not read_enabled() then operation.status = "succeeded" end
     end
     if operation.status == "submitted" and os.time() - operation.created_at >= 30 then
       operation.status = "failed"
