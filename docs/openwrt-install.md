@@ -1,6 +1,6 @@
 # 八卦炉 OpenWrt 安装
 
-向 `main` 推送或手动运行 workflow 会生成各架构 ipk artifact；推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.0`）还会按 tag 版本打包，并自动创建 GitHub Release，附带 x86_64、ARM64 和 MIPS24Kc 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
+只有推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.1`）才会触发 workflow，并按 tag 版本打包、自动创建 GitHub Release，当前提供 x86_64 和 ARM64 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
 
 ## 安装
 
@@ -27,7 +27,7 @@ LuCI 页面：
 - 配置：`服务 → 八卦炉 → Configuration`
 - 管理后台：LuCI 状态页中的“管理后台”按钮
 
-八卦炉默认使用独立端口，避免与系统已有 Mihomo/OpenClash 共用常见端口：管理后台 `0.0.0.0:18787`、受管 Mihomo 控制 API `127.0.0.1:19090`、受管 Mihomo 混合代理 `127.0.0.1:17890`。端口仍可在 LuCI 配置页按需修改。
+八卦炉默认使用独立端口，避免与系统已有 Mihomo/OpenClash 共用常见端口：管理后台 `0.0.0.0:18787`、受管 Mihomo 控制 API `127.0.0.1:19090`、受管 Mihomo 混合代理 `127.0.0.1:17890`。Mihomo 两个运行端口由程序固定管理，不在 LuCI 中开放修改。
 
 八卦炉后台密码重置在 LuCI 的八卦炉配置页完成。填写“重置八卦炉后台密码”后保存即可直接覆盖后台密码，不需要输入旧密码或登录八卦炉；重置成功后该字段会自动清空。
 

@@ -1,20 +1,9 @@
 name: Build OpenWrt IPK
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  pull_request:
-    paths:
-      - ".github/workflows/openwrt-ipk.yml"
-      - "cmd/**"
-      - "internal/**"
-      - "packaging/openwrt/**"
-      - "scripts/sync-admin-static.sh"
-      - "web/admin/**"
 
 permissions:
   contents: read
@@ -28,19 +17,13 @@ jobs:
       matrix:
         include:
           - name: OpenWrt x86_64
-            sdk_arch: x86-64
+            sdk_arch: x86_64
             goarch: amd64
-            artifact: bagualu-openwrt-x86-64
+            artifact: bagualu-openwrt-x86_64
           - name: OpenWrt ARM64
             sdk_arch: aarch64_cortex-a53
             goarch: arm64
             artifact: bagualu-openwrt-aarch64-cortex-a53
-          - name: OpenWrt MIPS24Kc
-            sdk_arch: mips_24kc
-            goarch: mips
-            gomips: softfloat
-            artifact: bagualu-openwrt-mips-24kc
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,17 +48,13 @@ jobs:
       - name: Resolve package version
         shell: bash
         run: |
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            version="${GITHUB_REF_NAME#v}"
-            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-              echo "Tag must use v<major>.<minor>.<patch>: $GITHUB_REF_NAME" >&2
-              exit 1
-            fi
-            echo "PKG_VERSION=$version" >> "$GITHUB_ENV"
-            echo "PKG_RELEASE=1" >> "$GITHUB_ENV"
-          else
-            echo "PKG_VERSION=0.1.0" >> "$GITHUB_ENV"
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag must use v<major>.<minor>.<patch>: $GITHUB_REF_NAME" >&2
+            exit 1
           fi
+          echo "PKG_VERSION=$version" >> "$GITHUB_ENV"
+          echo "PKG_RELEASE=1" >> "$GITHUB_ENV"
 
       - name: Verify SDD
         run: ./scripts/verify-sdd.sh
@@ -99,8 +78,9 @@ jobs:
         uses: openwrt/gh-action-sdk@v9
         env:
           ARCH: ${{ matrix.sdk_arch }}
-          BAGUALU_SOURCE_DIR: ${{ github.workspace }}
-          BAGUALU_BINARY: ${{ github.workspace }}/.openwrt/bagualu
+          PACKAGES: bagualu
+          NO_REFRESH_CHECK: 1
+          NO_SHFMT_CHECK: 1
 
       - name: Collect package metadata
         run: |
