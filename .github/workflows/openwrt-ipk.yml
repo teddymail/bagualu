@@ -71,9 +71,15 @@ jobs:
 
       - name: Stage OpenWrt package feed
         run: |
-          mkdir -p package
-          cp -a packaging/openwrt package/bagualu
-          cp .openwrt/bagualu package/bagualu/bagualu
+          cp -a packaging/openwrt bagualu
+          cp .openwrt/bagualu bagualu/bagualu
+          sed -i "s/^PKG_VERSION?=.*/PKG_VERSION:=${PKG_VERSION}/" bagualu/Makefile
+          sed -i "s/^PKG_RELEASE?=.*/PKG_RELEASE:=${PKG_RELEASE}/" bagualu/Makefile
+          test -x bagualu/bagualu
+          test -f bagualu/Makefile
+          test "$(grep -c '^PKG_VERSION:=' bagualu/Makefile)" -eq 1
+          test "$(grep -c '^PKG_RELEASE:=' bagualu/Makefile)" -eq 1
+          find bagualu -maxdepth 2 -type f -print | sort
 
       - name: Build package with OpenWrt SDK
         uses: openwrt/gh-action-sdk@v9
