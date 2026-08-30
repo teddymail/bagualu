@@ -114,7 +114,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          mapfile -t assets < <(find release-assets -type f \( -name '*.ipk' -o -name 'openwrt-install.md' \) -print)
+          mapfile -t assets < <(find release-assets -type f -name '*.ipk' -print)
+          install_doc=$(find release-assets -type f -name 'openwrt-install.md' -print -quit)
+          if [[ -n "$install_doc" ]]; then
+            cp "$install_doc" release-assets/openwrt-install.md
+            assets+=(release-assets/openwrt-install.md)
+          fi
           if [[ "${#assets[@]}" -eq 0 ]]; then
             echo "No release assets found" >&2
             exit 1
