@@ -69,25 +69,16 @@ jobs:
             go build -trimpath -ldflags "-s -w" -o .openwrt/bagualu ./cmd/bagualu
           file .openwrt/bagualu
 
-      - name: Stage OpenWrt package feed
+      - name: Build OpenWrt IPK
         run: |
-          cp -a packaging/openwrt bagualu
-          cp .openwrt/bagualu bagualu/bagualu
-          sed -i "s/^PKG_VERSION?=.*/PKG_VERSION:=${PKG_VERSION}/" bagualu/Makefile
-          sed -i "s/^PKG_RELEASE?=.*/PKG_RELEASE:=${PKG_RELEASE}/" bagualu/Makefile
-          test -x bagualu/bagualu
-          test -f bagualu/Makefile
-          test "$(grep -c '^PKG_VERSION:=' bagualu/Makefile)" -eq 1
-          test "$(grep -c '^PKG_RELEASE:=' bagualu/Makefile)" -eq 1
-          find bagualu -maxdepth 2 -type f -print | sort
-
-      - name: Build package with OpenWrt SDK
-        uses: openwrt/gh-action-sdk@v9
-        env:
-          ARCH: ${{ matrix.sdk_arch }}
-          PACKAGES: bagualu
-          NO_REFRESH_CHECK: 1
-          NO_SHFMT_CHECK: 1
+          ./scripts/build-openwrt-ipk.sh \
+            --binary .openwrt/bagualu \
+            --package-dir packaging/openwrt \
+            --version "$PKG_VERSION" \
+            --release "$PKG_RELEASE" \
+            --architecture "${{ matrix.sdk_arch }}" \
+            --output-dir bin/packages/${{ matrix.sdk_arch }}/bagualu
+          file bin/packages/${{ matrix.sdk_arch }}/bagualu/*.ipk
 
       - name: Collect package metadata
         run: |

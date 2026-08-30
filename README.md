@@ -98,7 +98,7 @@ http://路由器地址:18787/api/v1/subscribe/订阅令牌?format=dae
 当前公开 workflow 编译：
 
 - OpenWrt x86_64
-- OpenWrt ARM64，SDK 目标为 `aarch64_cortex-a53`
+- OpenWrt ARM64，安装包架构为 `aarch64_cortex-a53`
 
 MIPS 包暂未列入公开构建矩阵。安装前先确认设备架构：
 
@@ -111,7 +111,7 @@ opkg print-architecture
 
 ### 1. 获取 IPK
 
-只有推送形如 `v0.1.3` 的版本 tag 才会触发公开构建 workflow。进入 GitHub 项目的 Releases 页面，下载与设备架构对应的 `bagualu_*.ipk`。
+只有推送形如 `v0.1.5` 的版本 tag 才会触发公开构建 workflow。进入 GitHub 项目的 Releases 页面，下载与设备架构对应的 `bagualu_*.ipk`。
 
 不要下载错误架构的安装包，例如 x86_64 包不能安装到 ARM64 路由器。
 
@@ -318,12 +318,12 @@ npm run build --prefix web/admin
 OpenWrt IPK workflow 只响应版本 tag：
 
 ```sh
-git tag -a v0.1.4 -m "八卦炉 v0.1.4"
+git tag -a v0.1.5 -m "八卦炉 v0.1.5"
 git push origin main
-git push origin v0.1.4
+git push origin v0.1.5
 ```
 
-推送 `main` 不会触发 IPK 编译；只有 `v*` tag 会触发 x86_64 和 ARM64 构建，并在构建成功后创建 GitHub Release。
+推送 `main` 不会触发 IPK 编译；只有 `v*` tag 会触发 x86_64 和 ARM64 构建，并在构建成功后创建 GitHub Release。IPK 使用标准 OpenWrt `2.0` 包格式生成，不依赖本机或路由器上的 OpenWrt SDK。
 
 ## 项目文档
 
@@ -331,4 +331,3 @@ git push origin v0.1.4
 - SDD 验收记录：`docs/sdd-acceptance-2026-08-29.md`
 - OpenWrt 安装补充：`docs/openwrt-install.md`
 - 架构决策记录：`docs/adr/0001-runtime-and-module-boundaries.md`
-

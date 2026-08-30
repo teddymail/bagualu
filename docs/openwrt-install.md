@@ -1,6 +1,6 @@
 # 八卦炉 OpenWrt 安装
 
-只有推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.4`）才会触发 workflow，并按 tag 版本打包、自动创建 GitHub Release，当前提供 x86_64 和 ARM64 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
+只有推送符合 `v<major>.<minor>.<patch>` 格式的 tag（例如 `v0.1.5`）才会触发 workflow，并按 tag 版本打包、自动创建 GitHub Release，当前提供 x86_64 和 ARM64 安装包。先下载与路由器架构匹配的 `bagualu_*.ipk`。Bagualu 包不强制依赖系统 Mihomo，首次安装后可以在管理后台“系统设置”中下载并安装匹配架构的官方 Mihomo 内核。
 
 ## 安装
 

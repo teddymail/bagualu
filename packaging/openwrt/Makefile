@@ -3,6 +3,9 @@ include $(TOPDIR)/rules.mk
 PKG_NAME:=bagualu
 PKG_RELEASE?=12
 PKG_VERSION?=0.1.0
+PKG_MAINTAINER:=teddymail
+PKG_LICENSE:=MIT
+PKG_URL:=https://github.com/teddymail/bagualu
 BAGUALU_BINARY:=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/bagualu)
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
