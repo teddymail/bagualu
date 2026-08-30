@@ -20,7 +20,7 @@ define Package/bagualu/conffiles
 endef
 
 define Build/Prepare
-	$(call Build/Prepare/Default)
+	mkdir -p $(PKG_BUILD_DIR)
 	test -x "$(BAGUALU_BINARY)" || { echo "missing executable $(BAGUALU_BINARY)" >&2; exit 1; }
 	$(CP) "$(BAGUALU_BINARY)" $(PKG_BUILD_DIR)/bagualu
 endef
